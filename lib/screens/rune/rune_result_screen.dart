@@ -39,6 +39,7 @@ class RuneResultScreen extends StatelessWidget {
     required this.baseAttack,
     this.damageSummary,
     this.heroStats,
+    this.levelUps = const [],
     this.playCurrency,
     this.onRewardAdPlay,
     this.onShopRequested,
@@ -55,6 +56,9 @@ class RuneResultScreen extends StatelessWidget {
 
   /// 편성 영웅 **개별** 최종 스탯 (합산 아님). 카드가 각자 값을 보여준다.
   final List<HeroCombatStats>? heroStats;
+
+  /// 이번 전투에서 오른 레벨 목록 (승리 EXP). 비어 있으면 레벨업 카드를 숨긴다.
+  final List<HeroLevelUp> levelUps;
 
   /// 결과 시점의 현재 Play 잔액 (입장 비용 소모 후 기준, 요구사항 6.3).
   /// null이면(저장소 없는 직접 진입/테스트) 사전 검증을 생략한다.
@@ -196,6 +200,12 @@ class RuneResultScreen extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 14),
+
+                          // 레벨 업 카드 (승리 EXP 로 오른 영웅) — 없으면 숨긴다.
+                          if (levelUps.isNotEmpty) ...[
+                            _LevelUpCard(levelUps: levelUps),
+                            const SizedBox(height: 14),
+                          ],
 
                           // 파티 요약 카드 (글래스, 프롬프트 §38: Current Party / Synergy / Party Attack)
                           GlassSurface(

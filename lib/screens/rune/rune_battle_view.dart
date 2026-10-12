@@ -81,6 +81,14 @@ class _RuneBattleViewState extends State<RuneBattleView> {
   RuneProgress? _progress;
   bool _loading = true;
 
+  /// 직전 전투에서 오른 레벨(결과 화면 알림용). 승리 확정 시 채워진다.
+  List<HeroLevelUp> _lastLevelUps = const [];
+
+  /// 승리 EXP 반영 후의 영웅별 전투 스탯(결과 화면 표시용).
+  ///
+  /// 전투 시작 시 주입한 스탯은 레벨업 이전 값이므로, 결과 화면에는 이 값을 쓴다.
+  List<HeroCombatStats> _lastPostBattleStats = const [];
+
   @override
   void initState() {
     super.initState();
@@ -147,7 +155,7 @@ class _RuneBattleViewState extends State<RuneBattleView> {
     return true;
   }
 
-  /// 승/패 확정 시: 진행도 갱신 → 저장 → 분석 (RPT-316, RPT-308).
+  /// 승/패 확정 시: 진행도 갱신(+승리 EXP/레벨업) → 저장 → 분석 (RPT-316, RPT-308).
   Future<void> _applyBattleResult({
     required bool win,
     required int stageNumber,
@@ -156,20 +164,37 @@ class _RuneBattleViewState extends State<RuneBattleView> {
     final store = widget.store;
     if (store != null) {
       final current = _progress ?? RuneProgress();
-      final updated = win
+      var updated = win
           ? current.recordClear(
               stageNumber,
               gameReward,
               txId: 'stage_clear_${stageNumber}_run$_runId',
             )
           : current.recordDefeat(stageNumber: stageNumber);
+      // 승리 보상 EXP: 편성 영웅 전원에게 스테이지 비례 지급(패배는 없음).
+      // 같은 전투에서 여러 레벨이 오를 수 있고, 그 결과를 결과 화면에 넘긴다.
+      var levelUps = const <HeroLevelUp>[];
+      if (win) {
+        final granted = updated.grantPartyExp(
+          HeroLevel.expForVictory(stageNumber),
+        );
+        updated = granted.progress;
+        levelUps = granted.levelUps;
+      }
       _progress = updated;
+      // 결과 화면은 레벨업 반영 후 스탯을 보여줘야 하므로 여기서 미리 계산해 둔다.
+      _lastLevelUps = levelUps;
+      _lastPostBattleStats = [
+        for (final h in updated.partyHeroDefs)
+          updated.heroCombatStatsOf(h.heroId),
+      ];
       try {
         await store.save(updated);
       } catch (e, st) {
         widget.analytics?.recordError(e, st, context: 'rune progress save');
         widget.analytics?.logSaveError('rune_progress_save', e);
       }
+      if (mounted) setState(() {});
     }
     final an = widget.analytics;
     if (an != null) {
@@ -232,6 +257,8 @@ class _RuneBattleViewState extends State<RuneBattleView> {
       onNextStage: () => _newRun(nextStage: true),
       onRewardAdPlay: _grantRewardedAdPlay,
       onBattleResult: _applyBattleResult,
+      levelUps: _lastLevelUps,
+      postBattleHeroStats: _lastPostBattleStats,
     );
   }
 }
@@ -256,6 +283,8 @@ class _RuneBattleScreen extends StatefulWidget {
     this.onNextStage,
     this.onRewardAdPlay,
     this.onBattleResult,
+    this.levelUps = const [],
+    this.postBattleHeroStats = const [],
   });
 
   final int stageNumber;
@@ -302,6 +331,12 @@ class _RuneBattleScreen extends StatefulWidget {
     required int gameReward,
   })?
   onBattleResult;
+
+  /// 이번 전투에서 오른 레벨(결과 화면 알림). 승리 아니면 빈 목록.
+  final List<HeroLevelUp> levelUps;
+
+  /// 승리 EXP/레벨업 반영 후의 영웅별 스탯(결과 화면 표시). 비면 전투 스탯 폴백.
+  final List<HeroCombatStats> postBattleHeroStats;
 
   @override
   State<_RuneBattleScreen> createState() => _RuneBattleScreenState();
@@ -623,10 +658,14 @@ class _RuneBattleScreenState extends State<_RuneBattleScreen>
           party: _battle.state.party,
           baseAttack: _battle.state.baseAttack,
           damageSummary: _battle.state.damageStats.snapshot(),
-          // 주입된 영웅별 스탯이 정본. 비어 있으면(직접 진입/테스트) 폴백 유닛 값을 쓴다.
-          heroStats: _battle.state.heroStats.isNotEmpty
-              ? _battle.state.heroStats
-              : [for (final u in _battle.state.units) u.toCombatStats()],
+          // 승리 EXP/레벨업 반영 스탯을 우선한다(있을 때). 없으면(패배/직접 진입)
+          // 주입된 영웅별 스탯 → 폴백 유닛 값 순으로 내려간다.
+          heroStats: widget.postBattleHeroStats.isNotEmpty
+              ? widget.postBattleHeroStats
+              : (_battle.state.heroStats.isNotEmpty
+                    ? _battle.state.heroStats
+                    : [for (final u in _battle.state.units) u.toCombatStats()]),
+          levelUps: widget.levelUps,
           // 요구사항 6.3: 결과 화면에서 재화 사전 검증(다음/재도전)에 사용.
           playCurrency: widget.playCurrency,
           onRewardAdPlay: widget.onRewardAdPlay,

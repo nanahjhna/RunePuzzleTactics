@@ -27,6 +27,7 @@ import 'hero_gacha.dart';
 import 'hero_pool.dart';
 import 'hero_rarity.dart';
 import 'hero_roster.dart';
+import 'hero_level.dart';
 import 'hero_stat_upgrade.dart';
 import 'hero_stats.dart';
 import 'rune_element.dart';
@@ -109,6 +110,8 @@ class RuneProgress {
     List<String>? heroParty,
     Map<String, int>? heroGrades,
     Map<String, Map<HeroStatKind, int>>? heroStatLevels,
+    Map<String, int>? heroLevels,
+    Map<String, int>? heroExp,
     List<CurrencyTransaction>? ledger,
   }) : _heroOwned = {...?heroOwned},
        // 정원 초과 마이그레이션: 정원이 5 → 4 로 줄어 이전 저장 데이터에 5명이
@@ -121,6 +124,16 @@ class RuneProgress {
        _heroStatLevels = {
          for (final e in (heroStatLevels ?? const {}).entries)
            e.key: Map<HeroStatKind, int>.of(e.value),
+       },
+       // 레벨은 1 미만을 담지 않는다(기록 없음 = Lv.1). EXP 는 0 초과만 담는다.
+       _heroLevels = {
+         for (final e in (heroLevels ?? const {}).entries)
+           if (e.value > HeroLevel.minLevel)
+             e.key: e.value.clamp(HeroLevel.minLevel, HeroLevel.maxLevel),
+       },
+       _heroExp = {
+         for (final e in (heroExp ?? const {}).entries)
+           if (e.value > 0) e.key: e.value,
        },
        _ledger = List.of(ledger ?? const []);
 
@@ -198,6 +211,18 @@ class RuneProgress {
   /// 키가 없으면 그 영웅은 레벨 0 (= 강화 없음). [_decodeHeroStatLevels] 가
   /// 알 수 없는 영웅/스탯/범위 밖 값을 버린다.
   final Map<String, Map<HeroStatKind, int>> _heroStatLevels;
+
+  /// 영웅 id → 현재 레벨. 기록이 없으면 [HeroLevel.minLevel] (= Lv.1).
+  ///
+  /// 유료 스탯 강화([_heroStatLevels])와 달리 **재화를 쓰지 않는다** — 전투 승리
+  /// 보상 EXP 로만 오른다. 레벨이 오르면 [heroLevelBonus] 만큼 스탯이 자동 상승한다.
+  final Map<String, int> _heroLevels;
+
+  /// 영웅 id → 현재 EXP (다음 레벨까지의 진행분). 기록 없으면 0.
+  ///
+  /// 만렙 영웅은 0 으로 유지한다([grantPartyExp] 참고).
+  final Map<String, int> _heroExp;
+
   final List<CurrencyTransaction> _ledger;
 
   // ── 영웅/파티 ──
@@ -582,6 +607,75 @@ class RuneProgress {
   HeroStatUpgradeLevels heroStatUpgrade(String heroId) =>
       HeroStatUpgradeLevels(_heroStatLevels[heroId] ?? const {});
 
+  // ── 영웅 레벨 / 경험치 ──
+
+  /// [heroId] 영웅의 현재 레벨 ([HeroLevel.minLevel] ~ [HeroLevel.maxLevel]).
+  int heroLevel(String heroId) =>
+      (_heroLevels[heroId] ?? HeroLevel.minLevel).clamp(
+        HeroLevel.minLevel,
+        HeroLevel.maxLevel,
+      );
+
+  /// [heroId] 영웅의 현재 EXP (다음 레벨까지의 진행분). 만렙이면 0.
+  int heroExp(String heroId) {
+    if (heroLevel(heroId) >= HeroLevel.maxLevel) return 0;
+    return _heroExp[heroId] ?? 0;
+  }
+
+  /// [heroId] 가 최대 레벨인가.
+  bool isHeroMaxLevel(String heroId) => heroLevel(heroId) >= HeroLevel.maxLevel;
+
+  /// 다음 레벨까지 필요한 EXP. 만렙이면 0.
+  int heroExpToNext(String heroId) =>
+      isHeroMaxLevel(heroId) ? 0 : HeroLevel.expToNext(heroLevel(heroId));
+
+  /// 다음 레벨까지 진행 비율 (0.0 ~ 1.0). 만렙이면 1.0.
+  double heroExpRatio(String heroId) {
+    final need = heroExpToNext(heroId);
+    if (need <= 0) return 1.0;
+    return (heroExp(heroId) / need).clamp(0.0, 1.0);
+  }
+
+  /// [heroId] 레벨이 주는 자동 스탯 보너스 (Lv.1 = 0). 강화와 별개로 합산된다.
+  HeroStatBonuses heroLevelBonus(String heroId) =>
+      HeroLevel.statBonusAt(heroLevel(heroId));
+
+  /// 파티 전원에게 [amount] EXP 를 지급하고, 이번에 오른 레벨을 돌려준다.
+  ///
+  /// - **승리 1회당 1번** 호출한다(패배는 지급하지 않음). 편성 영웅 전원이 대상.
+  /// - 만렙 영웅에게는 쌓지 않는다(EXP 낭비 방지) — 그 영웅은 건너뛴다.
+  /// - 한 번에 여러 레벨이 오를 수 있다(연속 루프).
+  ///
+  /// 결과 화면의 "레벨 업" 알림은 [levelUps] 를 그대로 쓴다. 진행도는 [progress].
+  ({RuneProgress progress, List<HeroLevelUp> levelUps}) grantPartyExp(int amount) {
+    if (amount <= 0 || _heroParty.isEmpty) {
+      return (progress: this, levelUps: const <HeroLevelUp>[]);
+    }
+    final levels = {..._heroLevels};
+    final exps = {..._heroExp};
+    final ups = <HeroLevelUp>[];
+    for (final heroId in _heroParty) {
+      final from = heroLevel(heroId);
+      if (from >= HeroLevel.maxLevel) continue; // 만렙은 더 쌓지 않는다.
+      var level = from;
+      var exp = (_heroExp[heroId] ?? 0) + amount;
+      while (level < HeroLevel.maxLevel && exp >= HeroLevel.expToNext(level)) {
+        exp -= HeroLevel.expToNext(level);
+        level++;
+      }
+      if (level >= HeroLevel.maxLevel) exp = 0; // 만렙 도달 시 잔여 EXP 정리.
+      levels[heroId] = level;
+      exps[heroId] = exp;
+      if (level > from) {
+        ups.add(HeroLevelUp(heroId: heroId, fromLevel: from, toLevel: level));
+      }
+    }
+    return (
+      progress: copyWith(heroLevels: levels, heroExp: exps),
+      levelUps: ups,
+    );
+  }
+
   /// [heroId] 영웅의 강화 반영 **개인** 전투 스탯.
   ///
   /// 파티 보너스 분배가 사라졌으므로 [RuneHeroDef] 의 기본치에 그 영웅만의
@@ -599,12 +693,13 @@ class RuneProgress {
       );
     }
     final bonus = heroStatUpgrade(heroId);
+    final levelBonus = heroLevelBonus(heroId);
     return HeroCombatStats(
       heroId: def.heroId,
       element: def.element,
-      hp: def.hp + bonus.hp,
-      attack: def.attack + bonus.attack,
-      defense: def.defense + bonus.defense,
+      hp: def.hp + bonus.hp + levelBonus.hp,
+      attack: def.attack + bonus.attack + levelBonus.attack,
+      defense: def.defense + bonus.defense + levelBonus.defense,
     );
   }
 
@@ -617,22 +712,20 @@ class RuneProgress {
     for (final h in partyHeroDefs) heroCombatStatsOf(h.heroId),
   ];
 
-  /// 편성 영웅 개인치 + 각자 강화 = 편성 **합계** HP.
-  int get totalPartyHp => partyHeroDefs.fold(
-    0,
-    (sum, h) => sum + h.hp + heroStatUpgrade(h.heroId).hp,
-  );
+  /// 편성 영웅 개인치 + 각자 강화 + 레벨 보너스 = 편성 **합계** HP.
+  int get totalPartyHp =>
+      partyHeroDefs.fold(0, (sum, h) => sum + heroCombatStatsOf(h.heroId).hp);
 
   /// 편성 **합계** 공격력.
   int get totalPartyAtk => partyHeroDefs.fold(
     0,
-    (sum, h) => sum + h.attack + heroStatUpgrade(h.heroId).attack,
+    (sum, h) => sum + heroCombatStatsOf(h.heroId).attack,
   );
 
   /// 편성 **합계** 방어력.
   int get totalPartyDef => partyHeroDefs.fold(
     0,
-    (sum, h) => sum + h.defense + heroStatUpgrade(h.heroId).defense,
+    (sum, h) => sum + heroCombatStatsOf(h.heroId).defense,
   );
 
   /// 전투 진입 시 사용할 파티 공격력.
@@ -831,6 +924,8 @@ class RuneProgress {
     String? lastDailyRewardDate,
     Map<String, Map<HeroStatKind, int>>? heroStatLevels,
     Map<String, int>? heroGrades,
+    Map<String, int>? heroLevels,
+    Map<String, int>? heroExp,
     List<CurrencyTransaction>? ledger,
   }) {
     // heroId 는 이미 [HeroRoster] 가 정본으로 삼으므로 그대로 옮긴다.
@@ -850,6 +945,8 @@ class RuneProgress {
       // 등급·스탯 강화는 RuneRoster 가 알지 못하므로 호출자가 그대로 넘긴다.
       heroGrades: {...?heroGrades},
       heroStatLevels: {...?heroStatLevels},
+      heroLevels: {...?heroLevels},
+      heroExp: {...?heroExp},
       ledger: List.of(ledger ?? const []),
     );
   }
@@ -870,6 +967,8 @@ class RuneProgress {
     List<String>? heroParty,
     Map<String, int>? heroGrades,
     Map<String, Map<HeroStatKind, int>>? heroStatLevels,
+    Map<String, int>? heroLevels,
+    Map<String, int>? heroExp,
     List<CurrencyTransaction>? ledger,
   }) {
     return RuneProgress(
@@ -889,6 +988,8 @@ class RuneProgress {
       heroGrades: {...(heroGrades ?? _heroGrades)},
       // 생성자가 안쪽 맵까지 복사하므로 여기서는 바깥 맵만 넘기면 된다.
       heroStatLevels: {...(heroStatLevels ?? _heroStatLevels)},
+      heroLevels: {...(heroLevels ?? _heroLevels)},
+      heroExp: {...(heroExp ?? _heroExp)},
       ledger: List.of(ledger ?? _ledger),
     );
   }
@@ -926,6 +1027,16 @@ class RuneProgress {
                 if (s.value > 0) s.key.name: s.value,
             },
       },
+      // 영웅 레벨 / 경험치. Lv.1(기본)과 EXP 0 은 저장하지 않는다(구버전 세이브
+      // 키 부재 → 기본값 폴백과 같은 결과라 스키마 bump 불필요).
+      'heroLevels': {
+        for (final e in _heroLevels.entries)
+          if (e.value > HeroLevel.minLevel) e.key: e.value,
+      },
+      'heroExp': {
+        for (final e in _heroExp.entries)
+          if (e.value > 0) e.key: e.value,
+      },
       'ledger': [for (final t in _ledger) t.toJson()],
     };
   }
@@ -961,6 +1072,8 @@ class RuneProgress {
       heroParty: party,
       heroGrades: _decodeHeroGrades(json['heroGrades']),
       heroStatLevels: _decodeHeroStatLevels(json['heroStats']),
+      heroLevels: _decodeHeroLevels(json['heroLevels']),
+      heroExp: _decodeHeroExp(json['heroExp']),
       ledger: _decodeLedger(json['ledger']),
     );
   }
@@ -1005,6 +1118,38 @@ class RuneProgress {
       if (id is! String || HeroPool.byId(id) == null) continue;
       final v = (entry.value as num?)?.toInt();
       if (v == null || v < 0 || v >= HeroRarity.values.length) continue;
+      map[id] = v;
+    }
+    return map;
+  }
+
+  /// `heroLevels` (heroId → 레벨) 역직렬화.
+  ///
+  /// 구버전 세이브에는 키가 없으므로 빈 맵 = 전 영웅 Lv.1. 알 수 없는 영웅과
+  /// 범위 밖 레벨은 버리거나 클램핑한다(손상 세이브 복원).
+  static Map<String, int> _decodeHeroLevels(dynamic raw) {
+    if (raw is! Map) return <String, int>{};
+    final map = <String, int>{};
+    for (final entry in raw.entries) {
+      final id = entry.key;
+      if (id is! String || HeroPool.byId(id) == null) continue;
+      final v = (entry.value as num?)?.toInt();
+      if (v == null) continue;
+      final level = v.clamp(HeroLevel.minLevel, HeroLevel.maxLevel);
+      if (level > HeroLevel.minLevel) map[id] = level;
+    }
+    return map;
+  }
+
+  /// `heroExp` (heroId → 현재 EXP) 역직렬화. 0 이하/비정수 값은 버린다.
+  static Map<String, int> _decodeHeroExp(dynamic raw) {
+    if (raw is! Map) return <String, int>{};
+    final map = <String, int>{};
+    for (final entry in raw.entries) {
+      final id = entry.key;
+      if (id is! String || HeroPool.byId(id) == null) continue;
+      final v = (entry.value as num?)?.toInt();
+      if (v == null || v <= 0) continue;
       map[id] = v;
     }
     return map;
