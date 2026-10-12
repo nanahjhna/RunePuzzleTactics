@@ -397,8 +397,8 @@ void main() {
       });
     });
 
-    group('Poison — 독 스택 지속 피해', () {
-      test('독 룬 개수만큼 스택을 붙이고 매 몬스터 턴 스택당 5 를 깎는다', () {
+    group('Poison — 연소 폭발 (독 룬 전량 제거 + 즉시 피해)', () {
+      test('독 룬 개수 × 10 즉시 피해 + 독 룬을 태워 없앤다', () {
         final board = boardFromRows(cleanRows);
         final poisonCount = board.indicesOf(RuneElement.poison).length;
         expect(poisonCount, 8);
@@ -408,42 +408,35 @@ void main() {
         battle.onFirstTouch();
 
         expect(battle.useHeroSkill('poison_a'), isTrue);
-        expect(battle.state.poisonStacks, poisonCount);
-        expect(battle.state.poisonPerStack, 5);
-        // 스택이 붙자마자 같은 턴의 몬스터 턴에서 첫 틱이 돈다.
-        expect(battle.monsterHp, 1000 - poisonCount * 5);
-        expect(battle.lastResolve!.finalState.monsterPoisonStacks, poisonCount);
 
-        final ticks = battle.lastResolve!.monsterHits
-            .where((h) => h.source == DamageSource.poisonTick)
+        final event = battle.lastResolve!.heroSkillEvents.single;
+        // 즉시 피해 = 태운 독 룬 개수 × 10 (고정, 상성/공격력 미적용).
+        expect(event.amount, poisonCount * 10);
+        // 태운 칸 = 시전 전 보드의 독 룬 위치 전부.
+        expect(event.cells, hasLength(poisonCount));
+
+        // 피해가 monsterHits 에 heroSkill 출처로 기록된다.
+        final hit = battle.lastResolve!.monsterHits
+            .where((h) => h.source == DamageSource.heroSkill)
             .toList();
-        expect(ticks, hasLength(1));
-        expect(ticks.single.damage, poisonCount * 5);
-        expect(battle.lastResolve!.summedMonsterDamage, poisonCount * 5);
-
-        // 스택은 소진되지 않는다 — 시간이 갈수록 누적 피해가 커진다.
-        battle.endTurn();
-        expect(battle.state.poisonStacks, poisonCount);
-        expect(battle.monsterHp, 1000 - poisonCount * 5 * 2);
+        expect(hit, hasLength(1));
+        expect(hit.single.damage, poisonCount * 10);
+        // 지속 피해(스택) 축은 더 이상 쓰이지 않는다.
+        expect(battle.state.poisonStacks, 0);
       });
 
-      test('상한 10 을 넘겨 쌓이지 않는다', () {
+      test('독 룬이 없으면 피해 0 (발동은 소모된다)', () {
         final board = boardFromRows(cleanRows);
-        for (var i = 0; i < PuzzleBoard.size; i++) {
-          board.setIndex(i, const BoardTile.rune(RuneElement.poison));
+        for (final i in board.indicesOf(RuneElement.poison)) {
+          board.setIndex(i, const BoardTile.rune(RuneElement.fire));
         }
-        final battle = battleWithBoard(
-          board: board,
-          stage: testStage(monsterHp: 1000000, monsterAttack: 0),
-          roster: HeroRoster.fromIds(
-            ['poison_a'],
-            ownedIds: ['poison_a'],
-          ),
-        );
+        final battle = singleHeroBattle('poison_a', board: board);
         battle.startBattle();
         battle.onFirstTouch();
+
         expect(battle.useHeroSkill('poison_a'), isTrue);
-        expect(battle.state.poisonStacks, HeroSkills.maxPoisonStacks);
+        expect(battle.lastResolve!.heroSkillEvents.single.amount, 0);
+        expect(battle.lastResolve!.heroSkillEvents.single.cells, isEmpty);
       });
     });
 

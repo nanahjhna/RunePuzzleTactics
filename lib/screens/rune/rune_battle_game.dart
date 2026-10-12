@@ -1086,7 +1086,7 @@ class RuneBattleGame extends FlameGame {
       final e = events[i];
       final effect = e.effect;
 
-      // Water 의 즉사는 몬스터 HP 라벨 경로로 보낸다 (플로터가 아니라).
+      // Water 의 즉시 피해는 몬스터 HP 라벨 경로로 보낸다 (플로터가 아니라).
       if (effect == HeroSkillEffect.damagePerRune) {
         if (e.amount > 0) {
           onMonsterDamage?.call(
@@ -1100,11 +1100,24 @@ class RuneBattleGame extends FlameGame {
         continue;
       }
 
-      // 회복/스택은 수치까지 붙인다. 폭발·변환은 칸 수보다 "무엇이 일어났는가"가
-      // 중요하므로 이모지만 띄운다.
+      // 연소 폭발은 즉시 피해이면서 보드까지 바뀐다. 피해는 HP 라벨로 보내고,
+      // 아래 플로터(☠️ + 수치)도 함께 띄운다 — `continue` 하지 않는다.
+      if (effect == HeroSkillEffect.venomBurst && e.amount > 0) {
+        onMonsterDamage?.call(
+          DamageHit(
+            source: DamageSource.heroSkill,
+            element: e.element,
+            damage: e.amount,
+          ),
+        );
+      }
+
+      // 회복/스택/연소는 수치까지 붙인다. 폭발·변환은 칸 수보다 "무엇이
+      // 일어났는가"가 중요하므로 이모지만 띄운다.
       final showAmount =
           effect == HeroSkillEffect.healPerRune ||
-          effect == HeroSkillEffect.poisonStacks;
+          effect == HeroSkillEffect.poisonStacks ||
+          effect == HeroSkillEffect.venomBurst;
       _spawnFloater(
         '${effect.floaterEmoji}${showAmount ? ' ${e.amount}' : ''}',
         Vector2(_boardPx / 2, _tile * (1.0 + i * 0.9)),

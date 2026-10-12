@@ -3,9 +3,9 @@
 /// Game Currency 기반 성장: 파티 스탯 마도서 5종 + 영구 업그레이드 1종 (RPT-397 ~ RPT-404)
 /// + Hero Currency 기반 **랜덤 영입(뽑기)**.
 /// - 업그레이드: Game Currency 차감 → 레벨+1 (원자적 스냅샷, RPT-400)
-/// - 영입: ⭐ 1연/10연 뽑기. 등급( HeroRarity ) 가중 추첨, 중복은 최고 등급 영웅이
-///   흡수해 1등급 승급한다. 자동 파티 편성 없음 (프롬프트 §1).
-///   (등급은 현재 ★ 1단계뿐이라 확률표는 `★ 100%` 한 줄이고 중복은 항상 최고 등급.)
+/// - 영입: ⭐ 1연/10연 뽑기. 등급( HeroRarity ) 가중 추첨, 중복은 **뽑힌 그 영웅의
+///   카드가 +1 레벨**(만렙이면 무효). 자동 파티 편성 없음 (프롬프트 §1).
+///   (등급은 현재 ★ 1단계뿐이라 확률표는 `★ 100%` 한 줄이다.)
 ///
 /// 화면 배치 (요구사항 7·8·9):
 /// - **뽑기 패널이 최상단** — 재화 소모가 가장 크고 이벤트성이라 스크롤 없이 보인다.
@@ -429,13 +429,16 @@ class _PullButton extends StatelessWidget {
       // 로 바꿔 잉크 스플래시만 남긴다 — 조상 Material 이 없으면 리플이 아예
       // 안 그려진다.
       child: UiFrame.round12(
-        // 부모 `Column(mainAxisSize: min)` 안이라 세로가 무한대다.
-        fit: StackFit.loose,
+        // [StackFit.passthrough] 라야 부모 `Expanded` 의 **tight 폭**이 자식까지
+        // 그대로 전달돼 `InkWell` 히트박스가 프레임 폭 전체를 채운다. `loose` 면
+        // 자식이 텍스트 폭으로 줄어들어, 넓어 보이는 프레임과 달리 눌리는 범위가
+        // 글자만큼만 잡힌다. 세로는 콘텐츠 높이로 정해지고(스크롤 안 → 무한대
+        // 제약) `expand` 는 쓸 수 없다.
+        fit: StackFit.passthrough,
         background: highlight
             ? AppColors.accent.withValues(alpha: 0.18)
             : AppColors.glassCard,
         color: highlight ? AppColors.accent : AppColors.glassBorder,
-        insets: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         child: Material(
           color: Colors.transparent,
           shape: const RoundedRectangleBorder(
@@ -445,27 +448,32 @@ class _PullButton extends StatelessWidget {
             key: buttonKey,
             onTap: enabled ? onPressed : null,
             borderRadius: const BorderRadius.all(Radius.circular(12)),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
+            // 여백은 프레임 `insets` 가 아니라 여기서 준다 — `insets` 로 주면 그
+            // 만큼이 히트박스 바깥으로 빠져 테두리 쪽 탭이 죽는다.
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  l10n.trp('gacha_cost', {'n': cost}),
-                  style: const TextStyle(
-                    color: AppColors.accent,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
+                  const SizedBox(height: 2),
+                  Text(
+                    l10n.trp('gacha_cost', {'n': cost}),
+                    style: const TextStyle(
+                      color: AppColors.accent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

@@ -4,8 +4,8 @@
 /// 스킬을 쓰며, 수치 차이는 보드 상태(몇 칸이 변환됐는지, 독 스택이 몇 개
 /// 붙었는지)와 보드 규모에서 나온다.
 ///
-/// 요소는 5개이므로 효과도 5개다. 각 효과가 한 요소의 정체성을 그대로
-/// 나타내므로, "이 스킬이 왜 이 요소인지"를 따로 설명할 필요가 없다.
+/// 요소는 5개이고 각 요소가 효과 하나로 대응한다. 각 효과가 한 요소의 정체성을
+/// 그대로 나타내므로, "이 스킬이 왜 이 요소인지"를 따로 설명할 필요가 없다.
 ///
 /// | 요소 | 효과 | 정체성 |
 /// |---|---|---|
@@ -13,7 +13,10 @@
 /// | Water  | [damagePerRune] | 보드의 파란 룬 개수만큼 피해 — 개수 비례 |
 /// | Grass  | [healPerRune]   | 보드의 초록 룬 개수만큼 회복 — 개수 비례 |
 /// | Light  | [blastArea]     | 지정 칸 3×3 폭발 — 범위 |
-/// | Poison | [poisonStacks]  | 독 스택 지속 피해 — 한 번 심어 오래 갉아먹는다 |
+/// | Poison | [venomBurst]    | 독 룬을 태워 없애고 개수만큼 즉시 피해 |
+///
+/// [poisonStacks](지속 피해)는 **지금 쓰는 영웅이 없는 예약 효과**다. 현행 독
+/// 영웅(Nyx)은 [venomBurst] 를 쓰며, 다른 독 영웅을 도입할 때 재사용할 수 있다.
 ///
 /// **요소 키 공유에 대한historical note** — 이전 구현은 heroId 를 키로
 /// 썼고, 그 이전에는 `Map<RuneElement, HeroSkillSpec>` 로 요소를 키로
@@ -25,7 +28,11 @@ library;
 
 import 'rune_element.dart';
 
-/// 영웅 스킬 효과 종류. 요소가 5개이므로 효과도 5개다.
+/// 영웅 스킬 효과 종류.
+///
+/// 요소 5개에 각각 대응하는 **현행 5종**([convertColor]·[damagePerRune]·
+/// [healPerRune]·[blastArea]·[venomBurst])과, 지금은 쓰지 않는 예약 효과
+/// [poisonStacks] 로 이루어진다.
 enum HeroSkillEffect {
   /// **Fire** — 지정한 칸의 룬과 **같은 색의 룬을 보드 전량**을
   /// [HeroSkillSpec.convertTo] 속성으로 변환한다. 제거가 아니므로 매칭은
@@ -48,7 +55,17 @@ enum HeroSkillEffect {
   /// **Poison** — 보드 내 [HeroSkillSpec.countElement] 룬 개수만큼 몬스터에
   /// 독 스택을 붙인다. 스택은 매 몬스터 턴마다 `스택 × amount` 만큼
   /// 지속 피해를 주고 **유지된다** (폭발형과 달리 시간이 쌓일수록 위험).
-  poisonStacks;
+  ///
+  /// **현재 쓰는 영웅이 없는 예약 효과**다 — 현행 독 영웅은 [venomBurst] 를 쓴다.
+  poisonStacks,
+
+  /// **Poison (현행)** — 보드 내 [HeroSkillSpec.countElement] 독 룬을 **전부
+  /// 태워 없애고**, 없앤 개수 × amount 만큼 **즉시** 고정 피해를 준다. 제거로
+  /// 빈 칸이 생기므로 낙하/연쇄 매칭이 이어진다.
+  ///
+  /// [damagePerRune] 가 룬을 **세기만** 하고 보드를 그대로 두는 것과 달리,
+  /// 독은 보드를 **소모**한다 — 같은 "개수 비례"라도 읽는 맛이 다르다.
+  venomBurst;
 
   /// **보드 타일을 표적으로 지정해야 하는 스킬인가.**
   ///
@@ -67,6 +84,7 @@ enum HeroSkillEffect {
     HeroSkillEffect.healPerRune => 'heal',
     HeroSkillEffect.blastArea => 'blast',
     HeroSkillEffect.poisonStacks => 'poison',
+    HeroSkillEffect.venomBurst => 'venom',
   };
 
   /// 연출용 이모지. [battle_engine] 의 플로터 표기에 쓴다.
@@ -76,6 +94,7 @@ enum HeroSkillEffect {
     HeroSkillEffect.healPerRune => '🌿',
     HeroSkillEffect.blastArea => '💥',
     HeroSkillEffect.poisonStacks => '☠️',
+    HeroSkillEffect.venomBurst => '☠️',
   };
 }
 
@@ -99,7 +118,8 @@ class HeroSkillSpec {
   final HeroSkillEffect effect;
 
   /// **개수당** 수치 — Water/Grass 는 룬 1개당 피해·회복량(10),
-  /// Poison 은 독 스택 1개당 지속 피해(5).
+  /// Poison([venomBurst])은 태운 독 룬 1개당 즉시 피해(10),
+  /// Poison([poisonStacks], 예약)은 스택 1개당 지속 피해.
   ///
   /// Fire/Light 는 개수를 세지 않으므로 0 이다.
   final int amount;
@@ -129,6 +149,7 @@ class HeroSkillSpec {
     HeroSkillEffect.healPerRune => '$element: $countElement 룬 개수 × $amount 회복',
     HeroSkillEffect.blastArea => '$element: 지정 칸 3×3 폭발',
     HeroSkillEffect.poisonStacks => '$element: 독 룬 개수만큼 스택, 스택당 턴마다 $amount 피해',
+    HeroSkillEffect.venomBurst => '$element: 독 룬 전량 제거 + 개수 × $amount 즉시 피해',
   };
 }
 
@@ -140,9 +161,10 @@ class HeroSkillSpec {
 class HeroSkills {
   HeroSkills._();
 
-  /// 독 스택 상한 ([HeroSkillEffect.poisonStacks]).
+  /// 독 스택 상한 ([HeroSkillEffect.poisonStacks], 예약 효과).
   ///
   /// 풀스택(10)에서 매 턴 50 피해로, 오프라인 리듬으로 누적된다.
+  /// 현재 독 영웅은 [HeroSkillEffect.venomBurst] 를 쓰므로 도달하지 않는다.
   static const int maxPoisonStacks = 10;
 
   /// heroId → 스킬 정의. 미등록 영웅(스킬 없음)은 맵에 없다.
@@ -173,8 +195,8 @@ class HeroSkills {
     );
     const poison = HeroSkillSpec(
       element: RuneElement.poison,
-      effect: HeroSkillEffect.poisonStacks,
-      amount: 5,
+      effect: HeroSkillEffect.venomBurst,
+      amount: 10,
       countElement: RuneElement.poison,
     );
 
@@ -191,7 +213,7 @@ class HeroSkills {
       // ── Light : 지정 칸 3×3 폭발 ──
       'light_a': light,
 
-      // ── Poison : 독 룬 개수만큼 독 스택 ──
+      // ── Poison : 독 룬 전량 제거 + 개수×10 즉시 피해 ──
       'poison_a': poison,
     };
   }

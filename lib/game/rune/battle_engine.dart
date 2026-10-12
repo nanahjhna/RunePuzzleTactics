@@ -579,6 +579,9 @@ class BattleEngine {
 
       case HeroSkillEffect.poisonStacks:
         return _applyPoisonStacks(spec, heroId: heroId);
+
+      case HeroSkillEffect.venomBurst:
+        return _venomBurst(spec, heroId: heroId);
     }
   }
 
@@ -728,7 +731,58 @@ class BattleEngine {
     );
   }
 
-  /// **Poison** — 보드 내 독 룬 개수만큼 몬스터에 독 스택을 붙인다.
+  /// **Poison (현행)** — 보드 내 [HeroSkillSpec.countElement] 독 룬을 **전부
+  /// 제거**하고, 없앤 개수 × amount 만큼 **즉시** 고정 피해를 준다.
+  ///
+  /// [damagePerRune] 가 룬을 **세기만** 하고 보드를 그대로 두는 것과 달리, 여기서는
+  /// 독 룬을 **태워 없앤다** — 제거로 빈 칸이 생겨 낙하/연쇄 매칭이 이어지므로
+  /// "개수 비례 즉시 피해 + 보드 재편"이 한 번에 일어난다. 피해는 고정(상성/공격력
+  /// 미적용)이라 숫자가 "보드에 독이 몇 개 있었나"를 그대로 말한다.
+  ({HeroSkillEvent event, List<WaveResult> waves}) _venomBurst(
+    HeroSkillSpec spec, {
+    required String heroId,
+  }) {
+    final element = spec.countElement ?? spec.element;
+    final cells = state.board.indicesOf(element).toSet();
+    final dmg = cells.length * spec.amount;
+    if (dmg > 0) {
+      final hpBefore = state.monsterHp;
+      state.monsterHp = max(0, state.monsterHp - dmg);
+      state.damageStats.record(
+        BattleDamageRecord(
+          source: BattleDamageSource.heroSkill,
+          element: spec.element,
+          damage: dmg,
+          hpBefore: hpBefore,
+          hpAfter: state.monsterHp,
+          hpMax: state.monsterMaxHp,
+        ),
+      );
+    }
+    // 독 룬을 태워 없애고 낙하/연쇄를 잇는다 ([_blastArea] 와 같은 경로).
+    // 태울 룬이 없으면 피해 0 이벤트만 남긴다 (Water 와 동일하게 소모는 된다).
+    if (cells.isEmpty) {
+      return (
+        event: HeroSkillEvent(spec: spec, heroId: heroId, amount: dmg),
+        waves: const [],
+      );
+    }
+    final follow = engine.removeAndCascade(state.board, cells);
+    return (
+      event: HeroSkillEvent(
+        spec: spec,
+        heroId: heroId,
+        amount: dmg,
+        cells: cells,
+      ),
+      waves: follow.waves,
+    );
+  }
+
+  /// **Poison (예약)** — 보드 내 독 룬 개수만큼 몬스터에 독 스택을 붙인다.
+  ///
+  /// 지금 쓰는 영웅이 없다(현행 독 영웅은 [_venomBurst]). 다른 독 영웅을 도입할 때
+  /// 재사용할 수 있도록 구현만 남겨 둔다.
   ///
   /// 스택은 [_runMonsterTurn] 맨 앞에서 `스택 × [BattleState.poisonPerStack]`
   /// 만큼 계속 깎고 **소진되지 않는다**. 상한 [HeroSkills.maxPoisonStacks] 까지만
