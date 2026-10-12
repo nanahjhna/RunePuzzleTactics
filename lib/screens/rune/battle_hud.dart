@@ -146,6 +146,7 @@ class BattleHudRows extends StatelessWidget {
     required this.canUseSkill,
     required this.onUseSkill,
     this.armedSkillHeroId,
+    this.hintHeroId,
     this.heroHit,
     required this.sprite,
   });
@@ -174,6 +175,9 @@ class BattleHudRows extends StatelessWidget {
   /// HUD 는 이 영웅 슬롯에 조준 링을 그려 "지금 무엇을 기다리는 중인지"를
   /// 알려준다. 보드 하이라이트와 반드시 같은 값을 쓴다.
   final String? armedSkillHeroId;
+
+  /// 튜토리얼: 이 영웅 슬롯을 "눌러야 할 곳"으로 강조한다(맥동 링). null 이면 없음.
+  final String? hintHeroId;
 
   /// 현재 재생 중인 영웅 피격 연출. null 이면 없다.
   final ({String heroId, int token, int damage})? heroHit;
@@ -214,6 +218,7 @@ class BattleHudRows extends StatelessWidget {
               portraitHeight: metrics.heroPortraitHeight,
               onUseSkill: onUseSkill,
               armedSkillHeroId: armedSkillHeroId,
+              hintHeroId: hintHeroId,
               maxParty: HeroRoster.maxPartySize,
               hit: heroHit,
             ),
@@ -467,6 +472,7 @@ class BattleHeroPortraitHud extends StatelessWidget {
     required this.onUseSkill,
     this.maxParty = HeroRoster.maxPartySize,
     this.armedSkillHeroId,
+    this.hintHeroId,
     this.hit,
   });
 
@@ -485,6 +491,9 @@ class BattleHeroPortraitHud extends StatelessWidget {
 
   /// **조준 모드에 든 영웅 id** — 이 슬롯만 조준 링으로 표시된다.
   final String? armedSkillHeroId;
+
+  /// 튜토리얼: 이 슬롯을 "눌러야 할 곳"으로 강조한다(맥동 링 + 탭 아이콘).
+  final String? hintHeroId;
 
   /// 몬스터 반격/블랙룬/보스 궁극기로 실제로 HP 를 잃은 영웅 정보.
   ///
@@ -515,6 +524,7 @@ class BattleHeroPortraitHud extends StatelessWidget {
                           portraitHeight: portraitHeight,
                           onUseSkill: onUseSkill,
                           armed: armedSkillHeroId == units[i].heroId,
+                          hint: hintHeroId == units[i].heroId,
                           hit: hit?.heroId == units[i].heroId ? hit : null,
                         )
                       : _UnitSlot.locked(
@@ -541,6 +551,7 @@ class _UnitSlot extends StatelessWidget {
     required this.portraitHeight,
     required this.onUseSkill,
     this.armed = false,
+    this.hint = false,
     this.hit,
   }) : locked = false;
 
@@ -552,6 +563,7 @@ class _UnitSlot extends StatelessWidget {
        canUseSkill = false,
        onUseSkill = null,
        armed = false,
+       hint = false,
        hit = null,
        locked = true;
 
@@ -569,6 +581,10 @@ class _UnitSlot extends StatelessWidget {
   /// 조준 스킬의 포트레이트는 한 번 더 누르면 취소도 되므로, 탭이 막히면
   /// 조준을 못 빠져나온다.
   final bool armed;
+
+  /// **튜토리얼 힌트 슬롯** — 지금 눌러야 할 초상화. 맥동 링 + 탭 아이콘으로
+  /// 시선을 끈다. [IgnorePointer] 라 탭 입력은 실제 스킬 발동으로 이어진다.
+  final bool hint;
 
   /// 이 슬롯에 표시할 피격 연출.
   final ({String heroId, int token, int damage})? hit;
@@ -766,9 +782,86 @@ class _UnitSlot extends StatelessWidget {
                   ),
                 ),
               ),
+            // 튜토리얼 힌트: 지금 눌러야 할 초상화. IgnorePointer 라 실제 탭은
+            // 스킬 발동으로 이어진다(armed 상태에서는 조준 링이 이미 안내한다).
+            if (hint && !down && !armed)
+              const Positioned.fill(
+                child: IgnorePointer(child: _PortraitHintRing()),
+              ),
           ],
         ),
       ],
+    );
+  }
+}
+
+/// 튜토리얼 힌트용 초상화 맥동 링 + 탭 아이콘.
+///
+/// 정적 테두리로는 "지금 눌러라"가 전달되지 않아 알파가 맥동한다.
+/// [IgnorePointer] 로 감싸 실제 탭은 스킬 발동으로 이어진다.
+class _PortraitHintRing extends StatefulWidget {
+  const _PortraitHintRing();
+
+  @override
+  State<_PortraitHintRing> createState() => _PortraitHintRingState();
+}
+
+class _PortraitHintRingState extends State<_PortraitHintRing>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, _) {
+        // repeat() 은 0→1 반복이라 삼각파로 바꿔 0→1→0 맥동을 만든다.
+        final t = _c.value;
+        final tri = t < 0.5 ? t * 2 : (1 - t) * 2;
+        final alpha = 0.45 + 0.55 * tri;
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: AppColors.accentGold.withValues(alpha: alpha),
+                  width: 3,
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const SizedBox.expand(),
+            ),
+            // 탭 아이콘은 얼굴을 가리지 않도록 하단에 두고, 초상화 위에서도
+            // 읽히도록 어두운 원판을 깐다.
+            Align(
+              alignment: const Alignment(0, 0.72),
+              child: Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.45 * alpha),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.touch_app_rounded,
+                  color: const Color(0xFFFFFFFF).withValues(alpha: alpha),
+                  size: 20,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

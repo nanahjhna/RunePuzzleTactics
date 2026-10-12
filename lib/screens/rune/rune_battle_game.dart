@@ -219,6 +219,15 @@ class RuneBattleGame extends FlameGame {
   int? _hover;
   int? _selectedTile;
 
+  /// 튜토리얼 스와이프 힌트 (from → to). null 이면 표시하지 않는다.
+  ///
+  /// 로직이 아니라 **연출 전용**이다 — 엔진/입력 판정은 이 값을 보지 않는다.
+  /// [RuneTutorialView] 가 섹션 시작 시 [setHintMove] 로 설정한다.
+  PuzzleMove? _hintMove;
+
+  /// 플레이어가 조작을 시작하면 true — 섹션 목표를 달성할 때까지 힌트를 숨긴다.
+  bool _hintDismissed = false;
+
   /// 드래그 최근 보드 로컬 위치 (보드 밖 오버슛 시 인접 보정용).
   Vector2? _lastDragLocal;
 
@@ -643,6 +652,7 @@ class RuneBattleGame extends FlameGame {
 
   void _onBoardDragStart(int index) {
     _clearSelectedTile();
+    dismissHint(); // 조작을 시작하면 스와이프 힌트를 숨긴다.
     // 드래그는 스왑 의도다 — 조준 중이었다면 그대로 무시하고 푼다. 조준 상태로
     // 드래그하다 놓으면 "표적을 놓친 줄 알고 교환" 되는 사고를 막는다.
     _disarmSkill();
@@ -709,6 +719,7 @@ class RuneBattleGame extends FlameGame {
 
   /// 탭 입력: 룬을 선택하거나 선택한 룬과 인접한 룬을 교환한다.
   void _onBoardTap(int index) {
+    dismissHint(); // 조작을 시작하면 스와이프 힌트를 숨긴다.
     if (battle.state.phase == BattlePhase.plan) {
       battle.onFirstTouch();
       _hudChanged();
@@ -772,6 +783,7 @@ class RuneBattleGame extends FlameGame {
   /// 취소 경로는 세 개다 — 포트레이트 재탭 / 유효하지 않은 칸 탭 / 드래그
   /// ([_onBoardDragStart]). 어느 쪽도 턴을 소비하지 않는다.
   bool useHeroSkill(String heroId, {int? target}) {
+    dismissHint(); // 스킬 조작도 힌트 종료로 본다.
     if (!isIdle || !battle.canUseHeroSkill(heroId)) return false;
 
     final spec = battle.state.units.firstWhere((u) => u.heroId == heroId).skill;
@@ -794,6 +806,32 @@ class RuneBattleGame extends FlameGame {
 
   /// HUD 강제 갱신 (테스트/디버그 포함).
   void refreshHud() => _hudChanged();
+
+  // ── 튜토리얼 스와이프 힌트 ──
+
+  /// 현재 스와이프 힌트 (없으면 null).
+  PuzzleMove? get hintMove => _hintMove;
+
+  /// 스와이프 힌트를 지정한다 (null 이면 해제). 설정 시 숨김 상태도 초기화한다.
+  void setHintMove(PuzzleMove? move) {
+    _hintMove = move;
+    _hintDismissed = false;
+  }
+
+  /// 플레이어가 조작을 시작했으므로 힌트를 숨긴다.
+  void dismissHint() {
+    _hintDismissed = true;
+  }
+
+  /// 보드에 힌트를 그릴 조건.
+  ///
+  /// 연출([playbackActive])·몬스터 턴·일시정지·조준 중에는 그리지 않는다 —
+  /// "지금 이 수를 두라"는 안내가 조작 불가 시점에 떠 있으면 오히려 방해된다.
+  bool get hintVisible =>
+      _hintMove != null &&
+      !_hintDismissed &&
+      isIdle &&
+      _armedSkillHeroId == null;
 
   // ── Playback 내부 ──
 
@@ -1529,6 +1567,15 @@ class RuneBoardLayer extends PositionComponent
       }
     }
 
+    // 튜토리얼 스와이프 힌트: 어느 룬을 어느 방향으로 미는지 보드 위에 직접
+    // 보여준다. 텍스트 좌표 안내( "(col,row) ⇄ (col,row)") 만으로는 그 칸이
+    // 어디인지 눈으로 찾아야 해서, 처음 배우는 단계에서 병목이 된다.
+    // 플레이어가 조작을 시작하면([dismissHint]) 사라진다.
+    final hint = game._hintMove;
+    if (hint != null && game.hintVisible && hint.from != hint.to) {
+      _drawHint(canvas, hint);
+    }
+
     // 콤보 임팩트 스파크 (방사형 + 중력 + 페이드).
     for (final s in game._sparks) {
       final p = s.age / _Spark.duration;
@@ -1602,6 +1649,109 @@ class RuneBoardLayer extends PositionComponent
     }
     canvas.restore(); // 쉐이크
   }
+
+  /// 스와이프 힌트: from/to 두 칸 강조 + 방향 화살표 + 손가락 시연.
+  ///
+  /// 맥동(pulse)과 슬라이드 위치는 [RuneBattleGame.now] 만 사용하는 **순수 시각
+  /// 효과**다 — 로직(몇 초 남음 등)과 무관하다.
+  void _drawHint(Canvas canvas, PuzzleMove move) {
+    const ring = Color(0xFF4FC3F7); // 텍스트 힌트(AppColors.blue)와 톤을 맞춘 옥색.
+    final pulse = 0.55 + 0.45 * math.sin(game.now * 4.0).abs();
+    final a = _cellCenterOf(move.from);
+    final b = _cellCenterOf(move.to);
+
+    _drawHintCell(canvas, move.from, ring, pulse);
+    _drawHintCell(canvas, move.to, ring, pulse);
+
+    // 방향 화살표 (양 끝은 칸 중앙을 비워 룬이 가려지지 않게 한다).
+    final dir = b - a;
+    final len = dir.distance;
+    if (len > 1) {
+      final u = dir / len;
+      final start = a + u * (game._tile * 0.30);
+      final tip = b - u * (game._tile * 0.32);
+      canvas.drawLine(
+        start,
+        tip,
+        Paint()
+          ..color = ring.withValues(alpha: 0.35 + 0.35 * pulse)
+          ..strokeWidth = math.max(2.0, game._tile * 0.05)
+          ..strokeCap = StrokeCap.round,
+      );
+      final head = game._tile * 0.20;
+      final back = tip - u * head;
+      final perp = Offset(-u.dy, u.dx) * (head * 0.55);
+      final arrow = Path()
+        ..moveTo(tip.dx, tip.dy)
+        ..lineTo(back.dx + perp.dx, back.dy + perp.dy)
+        ..lineTo(back.dx - perp.dx, back.dy - perp.dy)
+        ..close();
+      canvas.drawPath(
+        arrow,
+        Paint()..color = ring.withValues(alpha: 0.5 + 0.45 * pulse),
+      );
+    }
+
+    // 손가락 시연: from → to 로 점이 미끄러졌다가 끝에서 페이드아웃 후 다시 시작.
+    final loop = (game.now * 0.8) % 1.0;
+    final e = _ease(loop);
+    final fade = loop > 0.85 ? (1 - (loop - 0.85) / 0.15) : 1.0;
+    for (var k = 4; k >= 1; k--) {
+      final trailT = (e - k * 0.06).clamp(0.0, 1.0);
+      final trail = Offset.lerp(a, b, trailT)!;
+      canvas.drawCircle(
+        trail,
+        game._tile * (0.05 + 0.012 * k),
+        Paint()..color = ring.withValues(alpha: 0.10 * fade),
+      );
+    }
+    final pos = Offset.lerp(a, b, e)!;
+    canvas.drawCircle(
+      pos,
+      game._tile * 0.11,
+      Paint()..color = const Color(0xFFFFFFFF).withValues(alpha: 0.92 * fade),
+    );
+    canvas.drawCircle(
+      pos,
+      game._tile * 0.11,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = math.max(1.5, game._tile * 0.03).toDouble()
+        ..color = ring.withValues(alpha: fade),
+    );
+  }
+
+  /// 힌트 대상 칸 하나: 맥동 글로우(채움) + 외곽선(stroke).
+  void _drawHintCell(Canvas canvas, int index, Color color, double pulse) {
+    final rect = Rect.fromLTWH(
+      (index % PuzzleBoard.cols) * game._tile,
+      (index ~/ PuzzleBoard.cols) * game._tile,
+      game._tile,
+      game._tile,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, Radius.circular(game._tile * 0.16)),
+      Paint()..color = color.withValues(alpha: 0.14 + 0.14 * pulse),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        rect.deflate(game._tile * 0.05),
+        Radius.circular(game._tile * 0.16),
+      ),
+      Paint()
+        ..color = color.withValues(alpha: 0.55 + 0.4 * pulse)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = math.max(2.0, game._tile * 0.055).toDouble(),
+    );
+  }
+
+  /// 칸 인덱스의 중심 좌표(보드 로컬).
+  Offset _cellCenterOf(int index) => Offset(
+    (index % PuzzleBoard.cols) * game._tile + game._tile / 2,
+    (index ~/ PuzzleBoard.cols) * game._tile + game._tile / 2,
+  );
+
+  static double _ease(double t) => t * t * (3 - 2 * t);
 
   void _drawTile(Canvas canvas, _VisTile v, double tx, double ty) {
     final inset = game._tile * 0.05;

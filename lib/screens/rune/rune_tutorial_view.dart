@@ -67,6 +67,17 @@ class _RuneTutorialViewState extends State<RuneTutorialView> {
   final ValueNotifier<int> _hud = ValueNotifier<int>(0);
   bool _advancing = false;
   bool _skipDialogOpen = false;
+
+  /// HUD 위젯([BattleHudRows])이 **생성자 인자로 캡처**하는 값들의 마지막 스냅샷.
+  ///
+  /// [BattleHudRows] 는 내부에서 `_hud` 를 구독해 스스로 다시 그리지만,
+  /// `isPlayerTurn`/`canUseSkill`/`armedSkillHeroId`/`hintHeroId` 는 이 화면의
+  /// `build()` 가 만들어 넘기는 값이라 값이 바뀌면 `setState` 로 한 번 더 밀어야
+  /// 갱신된다. 값이 그대로면 건너뛴다(재생 중 매 프레임이 아니라 전환 순간만).
+  bool? _lastPlayerTurn;
+  bool? _lastIdle;
+  String? _lastArmedSkill;
+
   GameAudioService get _audioService =>
       widget.audioService ?? GameAudioService.instance;
 
@@ -127,6 +138,9 @@ class _RuneTutorialViewState extends State<RuneTutorialView> {
       onHudChanged: _onHud,
       onComboEffect: _onComboEffect,
     );
+    // 보드 위에 "어느 룬을 어느 방향으로 미는지"를 시각화한다(좌표 텍스트만으로는
+    // 그 칸을 눈으로 찾아야 한다). 플레이어가 조작을 시작하면 게임이 스스로 숨긴다.
+    game.setHintMove(spec.hintMove);
 
     if (!mounted) return;
     setState(() {
@@ -135,12 +149,29 @@ class _RuneTutorialViewState extends State<RuneTutorialView> {
       _battle = battle;
       _game = game;
       _advancing = false;
+      // 새 게임/섹션이므로 HUD 인자 스냅샷을 초기화한다.
+      _lastPlayerTurn = null;
+      _lastIdle = null;
+      _lastArmedSkill = null;
     });
   }
 
   void _onHud() {
     if (!mounted) return;
     _hud.value++;
+    // HUD 슬롯이 받는 값들이 바뀌면 `build()` 를 한 번 더 돌려 다시 캡처한다
+    // (특히 스킬 힌트: 초상화 탭 → 조준 → 발동 전환에서 힌트가 꺼져야 한다).
+    final playerTurn = _isPlayerTurn;
+    final idle = _game.isIdle;
+    final armed = _game.armedSkillHeroId;
+    if (playerTurn != _lastPlayerTurn ||
+        idle != _lastIdle ||
+        armed != _lastArmedSkill) {
+      _lastPlayerTurn = playerTurn;
+      _lastIdle = idle;
+      _lastArmedSkill = armed;
+      setState(() {});
+    }
     _maybeAdvance(_section, _battle);
   }
 
@@ -271,6 +302,9 @@ class _RuneTutorialViewState extends State<RuneTutorialView> {
                   canUseSkill: _game.isIdle,
                   onUseSkill: _game.useHeroSkill,
                   armedSkillHeroId: _game.armedSkillHeroId,
+                  // 스킬 섹션: 초상화를 눌러야 한다는 사실을 보드 안내 카드 텍스트
+                  // 밖에서도 보여준다(초상화 자체에 맥동 링).
+                  hintHeroId: _hintHeroId,
                   sprite: MonsterSprite(
                     battle: _battle,
                     hud: _hud,
@@ -311,6 +345,22 @@ class _RuneTutorialViewState extends State<RuneTutorialView> {
     BattlePhase.resolving => true,
     _ => false,
   };
+
+  /// 스킬 섹션에서 "초상화를 눌러 스킬 사용" 힌트를 줄 영웅 id.
+  ///
+  /// - 스킬 섹션이 아니면 null.
+  /// - 이미 스킬을 쓴 영웅이면 null(힌트 종료).
+  /// - 조준 모드에 들어갔으면 null — 이미 초상화를 눌렀고, 이제는 보드의 조준
+  ///   하이라이트가 다음 단계(룬 탭)를 안내한다.
+  String? get _hintHeroId {
+    if (_section.id != 'skill') return null;
+    if (_game.armedSkillHeroId != null) return null;
+    final units = _battle.state.units;
+    if (units.isEmpty) return null;
+    final unit = units.first;
+    if (unit.skillUsed) return null;
+    return unit.heroId;
+  }
 
   /// 실제 전투 상단바 프레임을 그대로 쓴다 — 좌우 여백·일시정지 버튼 위치가 동일하다.
   /// 중앙 자리만 「튜토리얼 / STEP n/N」으로 갈아끼우고, 좌측 X = 스킵을 넣는다.
