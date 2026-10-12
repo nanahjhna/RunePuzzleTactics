@@ -27,6 +27,7 @@ import '../../services/game_audio_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/hero_hit_flash.dart';
+import '../../widgets/hero_portrait.dart';
 import '../../widgets/play_shortage_dialog.dart';
 import '../../widgets/rewarded_ad_helper.dart';
 import 'battle_hud.dart';
@@ -414,6 +415,21 @@ class _RuneBattleScreenState extends State<_RuneBattleScreen>
   RuneElement? _noElementHeroWarning;
   Timer? _noElementHeroTimer;
 
+  // ── 파도 처치 보상 (HP 회복 + 스킬 충전 1명) ──
+
+  /// 스킬 충전 선택 모달이 떠 있는 동안 중복 표시를 막는 가드.
+  bool _rewardDialogShown = false;
+
+  /// UI 가 마지막으로 처리한 파도 처치 보상 번호 ([BattleState.waveKillSerial]).
+  ///
+  /// 보상은 처치마다 정확히 한 번만 처리해야 한다 — 회복량이 같은 값으로
+  /// 반복돼도 [waveKillSerial] 이 다르면 새 보상으로 인식한다.
+  int _lastHandledWaveKillSerial = 0;
+
+  /// 스킬 충전 후보가 없을 때 파티 HP 회복만 알리는 짧은 배너 문구.
+  String? _waveHealBanner;
+  Timer? _waveHealBannerTimer;
+
   /// 마지막 [_onHud] 시점의 [_isPlayerTurn] / [_game.isIdle].
   ///
   /// HUD 는 이 두 값을 **생성자 인자로 캡처**한다
@@ -481,6 +497,7 @@ class _RuneBattleScreenState extends State<_RuneBattleScreen>
     _partyDamageFlashTimer?.cancel();
     _hitTimer?.cancel();
     _noElementHeroTimer?.cancel();
+    _waveHealBannerTimer?.cancel();
     _hud.dispose();
     super.dispose();
   }
@@ -518,6 +535,7 @@ class _RuneBattleScreenState extends State<_RuneBattleScreen>
       setState(() {});
     }
     _maybeShowEndResult();
+    _handleWaveReward();
   }
 
   /// 속성 영웅 없음 경고 발화 — 몬스터 중앙에 경고를 띄우고 일정 시간 뒤 숨긴다.
@@ -529,6 +547,116 @@ class _RuneBattleScreenState extends State<_RuneBattleScreen>
       if (!mounted) return;
       setState(() => _noElementHeroWarning = null);
     });
+  }
+
+  // ── 파도 처치 보상 (HP 회복 + 스킬 충전 1명) ──
+
+  /// 파도 몬스터 처치 보상을 화면에 **한 번만** 표시한다.
+  ///
+  /// 엔진이 [BattleState.advanceMonster] 직후 [BattleState.waveKillSerial] 을
+  /// 올린다. 여기서는 그 번호가 바뀐 순간에만 반응한다 — 같은 회복량이 반복돼도
+  /// 놓치지 않는다. 보드 연출이 끝난 뒤([RuneBattleGame.isIdle])에만 띄운다.
+  ///
+  /// - 스킬을 이미 쓴 살아있는 영웅이 있으면 → 선택 모달.
+  /// - 없으면 → HP 회복만 짧은 배너(회복량 0이면 아무것도 안 띄운다).
+  void _handleWaveReward() {
+    if (!mounted || !_ready || _paused) return;
+    if (_dialogShown || _rewardDialogShown) return;
+    if (!_game.isIdle) return; // 보드 연출이 끝난 뒤에만 표시
+    final s = _battle.state;
+    if (s.waveKillSerial == _lastHandledWaveKillSerial) return;
+    _lastHandledWaveKillSerial = s.waveKillSerial;
+
+    final candidates = s.skillRechargeCandidates;
+    if (candidates.isNotEmpty) {
+      _showWaveRewardDialog(candidates, s.waveKillHeal);
+    } else if (s.waveKillHeal > 0) {
+      _showWaveHealBanner(s.waveKillHeal);
+    }
+  }
+
+  /// 스킬 충전 후보가 없을 때 HP 회복만 알리는 짧은 배너.
+  void _showWaveHealBanner(int heal) {
+    final l10n = LanguageScope.of(context).strings;
+    _waveHealBannerTimer?.cancel();
+    setState(
+      () => _waveHealBanner = l10n.trp('wave_reward_heal', {'n': '$heal'}),
+    );
+    _waveHealBannerTimer = Timer(const Duration(milliseconds: 1600), () {
+      if (!mounted) return;
+      setState(() => _waveHealBanner = null);
+    });
+  }
+
+  /// 파도 처치 보상 모달 — 파티 HP 회복 안내 + 스킬 충전 대상 1명 선택.
+  ///
+  /// 후보 중 하나를 고르면 그 영웅의 스킬을 충전([BattleEngine.
+  /// resolveSkillRecharge])한다. 선택 없이 닫히면(뒤로가기 포함) 건너뛰기로
+  /// 처리해 pending 을 **반드시** 해제한다 — 그러지 않으면 엔진이 "선택 대기"에
+  /// 묶여 이후 처치의 충전이 막힌다.
+  Future<void> _showWaveRewardDialog(
+    List<String> candidates,
+    int healTotal,
+  ) async {
+    _rewardDialogShown = true;
+    final picked = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) =>
+          _WaveRewardDialog(candidates: candidates, healTotal: healTotal),
+    );
+    if (!mounted) return;
+    _rewardDialogShown = false;
+    if (picked == null) {
+      _battle.skipSkillRecharge();
+    } else {
+      _battle.resolveSkillRecharge(picked);
+    }
+    _hud.value++;
+  }
+
+  /// HP 회복 배너 오버레이 (모달 없는 처치 보상).
+  Widget _buildWaveHealBannerOverlay(String text) {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 92),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.7, end: 1.0),
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutBack,
+              builder: (context, value, child) =>
+                  Transform.scale(scale: value, child: child),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.72),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.green.withValues(alpha: 0.8),
+                    width: 1.5,
+                  ),
+                ),
+                child: Text(
+                  text,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.green,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _flashPartyDamage() {
@@ -904,6 +1032,9 @@ class _RuneBattleScreenState extends State<_RuneBattleScreen>
               // 속성 영웅 없음 경고 — 몬스터 중앙에 표시.
               if (_noElementHeroWarning != null)
                 _buildNoElementHeroOverlay(_noElementHeroWarning!),
+              // 파도 처치 보상 HP 회복 배너 (스킬 충전 후보가 없을 때만).
+              if (_waveHealBanner != null)
+                _buildWaveHealBannerOverlay(_waveHealBanner!),
             ],
           ),
         ),
@@ -1162,6 +1293,157 @@ class _RuneBattleScreenState extends State<_RuneBattleScreen>
                   ),
                 ),
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 파도 처치 보상 모달 — 파티 HP 회복 안내 + 스킬 충전 대상 **1명** 선택.
+///
+/// 후보([candidates]) 중 하나를 탭하면 그 영웅 id 를 결과로 돌려준다. 부모
+/// ([_RuneBattleViewState._showWaveRewardDialog])가 결과로 엔진을 갱신한다.
+class _WaveRewardDialog extends StatelessWidget {
+  const _WaveRewardDialog({required this.candidates, required this.healTotal});
+
+  /// 스킬을 충전할 수 있는 영웅 id 목록 (파티 순서).
+  final List<String> candidates;
+
+  /// 이번 처치 보상으로 회복된 파티 HP 합계 (0이면 표기 생략).
+  final int healTotal;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = LanguageScope.of(context).strings;
+    return Dialog(
+      backgroundColor: AppColors.cardDark,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: AppColors.gold.withValues(alpha: 0.8), width: 1.5),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              l10n.tr('wave_reward_title'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.gold,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            if (healTotal > 0) ...[
+              const SizedBox(height: 6),
+              Text(
+                l10n.trp('wave_reward_heal', {'n': '$healTotal'}),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppColors.green,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            Text(
+              l10n.tr('wave_reward_skill'),
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 340),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final heroId in candidates)
+                      _WaveRechargeRow(heroId: heroId),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(
+                l10n.tr('wave_reward_skip'),
+                style: const TextStyle(color: Colors.white60),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 파도 처치 보상 모달의 영웅 1행 — 초상화 + 이름 + 스킬명. 탭하면 충전한다.
+class _WaveRechargeRow extends StatelessWidget {
+  const _WaveRechargeRow({required this.heroId});
+
+  final String heroId;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = LanguageScope.of(context).strings;
+    final hero = HeroPool.byId(heroId);
+    final spec = HeroSkills.specFor(heroId);
+    final element = hero?.element ?? spec?.element ?? RuneElement.fire;
+    final color = heroElementColor(element);
+    final heroName = l10n.tr('hero_name_$heroId');
+    final skillName = spec == null
+        ? l10n.tr('battle_skill_none')
+        : l10n.tr(spec.l10nKeyFor(heroId));
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => Navigator.of(context).pop(heroId),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              children: [
+                HeroPortrait(hero: hero, size: 42, borderColor: color),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        heroName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${element.emoji} $skillName',
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.bolt, color: color, size: 20),
+              ],
             ),
           ),
         ),

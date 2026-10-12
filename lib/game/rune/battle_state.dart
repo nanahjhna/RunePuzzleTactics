@@ -134,14 +134,26 @@ class BattleState {
        _fallbackHp = partyMaxHp,
        _fallbackAtk = baseAttack,
        heroStats = heroStats == null ? const [] : List.of(heroStats),
-       monsterHp = stage.monsterHp,
-       monsterMaxHp = stage.monsterHp,
+       _monsters = stage.wave.isEmpty
+           ? [stage.monsterAt(0)]
+           : List.of(stage.wave),
+       monsterHp = stage.wave.isEmpty ? stage.monsterHp : stage.wave.first.hp,
+       monsterMaxHp =
+           stage.wave.isEmpty ? stage.monsterHp : stage.wave.first.hp,
        bossCountdown = stage.bossCountdown;
 
   final StageConfig stage;
   final HeroRoster party;
   final PuzzleBoard board;
   final int baseAttack;
+
+  /// 파도 등장 대기열. [stage.wave] 가 비어 있으면 레거시 단일 몬스터 1마리를
+  /// 담는다(튜토리얼·보스). [monsterIndex] 가 현재 등장 중인 몬스터를 가리키고,
+  /// [monsterHp]/[monsterMaxHp] 는 항상 **그 몬스터의** HP다.
+  final List<WaveMonster> _monsters;
+
+  /// 현재 등장 중인 몬스터 인덱스 (0-based). [advanceMonster] 가 +1 한다.
+  int monsterIndex = 0;
 
   /// 폴백용 합산 HP/ATK. 영웅별 스탯이 주입되지 않은 경로에서만 쓴다.
   final int _fallbackHp;
@@ -160,6 +172,45 @@ class BattleState {
 
   int monsterHp;
   int monsterMaxHp;
+
+  /// 현재 등장 중인 몬스터 — 몬스터 상성/공격/이름의 **단일 권위**.
+  ///
+  /// 파도 전투에서는 마리마다 약점/열세/공격이 다르므로, 엔진은 [stage] 를 직접
+  /// 읽지 않고 반드시 이 값을 쓴다([StageConfig.affinityFor] 는 단일 몬스터
+  /// 호환용). [monsterIndex] 는 항상 유효 범위 안이므로 여기서는 방어 clamp 만.
+  WaveMonster get currentMonster {
+    final i = monsterIndex < 0
+        ? 0
+        : (monsterIndex >= _monsters.length ? _monsters.length - 1 : monsterIndex);
+    return _monsters[i];
+  }
+
+  /// 등장할 몬스터 수 (파도든 단일이든 1 이상).
+  int get monsterCount => _monsters.length;
+
+  /// 현재 몬스터가 몇 번째인지 (1-based, HUD "몬스터 i/n" 표기용).
+  int get monsterNumber => monsterIndex + 1;
+
+  /// 남은 몬스터 수 (현재 등장 중인 몬스터 포함).
+  int get monstersRemaining => _monsters.length - monsterIndex;
+
+  /// 현재 몬스터가 처치되었을 때 다음 몬스터가 이어서 등장하는가.
+  bool get hasNextMonster => monsterIndex + 1 < _monsters.length;
+
+  /// 현재 몬스터 처치 후 **다음 몬스터로 넘어간다**.
+  ///
+  /// HP([monsterHp]/[monsterMaxHp])와 독 스택은 새 몬스터 기준으로 리셋된다 —
+  /// 독은 몬스터에 귀속되므로 새 몬스터는 스택 0으로 시작한다. 다음 몬스터가
+  /// 있으면 true, 마지막 몬스터(이미 승리 판정이 내려질 상태)면 false.
+  bool advanceMonster() {
+    if (!hasNextMonster) return false;
+    monsterIndex++;
+    monsterHp = _monsters[monsterIndex].hp;
+    monsterMaxHp = _monsters[monsterIndex].hp;
+    poisonStacks = 0;
+    poisonPerStack = 0;
+    return true;
+  }
 
   /// 파티 **합계** 남은 HP (살아있는 영웅만). 쓰러진 영웅은 0 이므로 합에서 빠진다.
   int get partyHp => units.fold(0, (sum, u) => sum + u.hp);
@@ -224,6 +275,38 @@ class BattleState {
 
   /// 이번 몬스터 턴에 독이 깎을 피해. 스택이 없으면 0.
   int get poisonTickDamage => poisonStacks * poisonPerStack;
+
+  // ── 파도 처치 보상 (RPT: wave kill reward) ──
+
+  /// 파도 몬스터 처치 보상으로 **스킬 재사용 충전(1명)** 선택이 대기 중인가.
+  ///
+  /// [advanceMonster] 로 다음 몬스터가 등장할 때 엔진([BattleEngine.
+  /// _applyWaveKillReward])이 후보([skillRechargeCandidates])가 있으면 true 로
+  /// 세운다. UI(모달)가 [BattleEngine.resolveSkillRecharge] 또는
+  /// [BattleEngine.skipSkillRecharge] 로 해제하기 전까지 유지된다.
+  bool skillRechargePending = false;
+
+  /// 마지막 파도 처치 보상의 파티 HP 회복 **합계** (UI 표기용).
+  ///
+  /// 살아있는 영웅 전원이 최대 HP × [BattleEngine.waveHealRatio] 만큼 회복된
+  /// 실제 합계다. 0 이면 회복 없음(모두 풀피).
+  int waveKillHeal = 0;
+
+  /// 파도 몬스터 처치 보상이 발생할 때마다 증가하는 카운터.
+  ///
+  /// UI 가 보상을 **정확히 한 번만** 처리(모달/배너 표시)하기 위한 구분자다 —
+  /// 회복량이 같은 값으로 반복돼도 놓치지 않는다.
+  int waveKillSerial = 0;
+
+  /// 파도 처치 보상으로 스킬을 다시 쓸 수 있게 할 **후보** 영웅 id 목록 (파티 순서).
+  ///
+  /// [BattleEngine.canUseHeroSkill] 과 반대 방향이다 — **이미 스킬을 쓴** 살아있는
+  /// 영웅만 충전 대상이 된다 (안 쓴 영웅은 충전해도 소용없고, 쓰러진 영웅은
+  /// 남은 스테이지에서 스킬을 쓸 수 없다).
+  List<String> get skillRechargeCandidates => [
+    for (final u in units)
+      if (!u.isDown && u.skillUsed && u.skill != null) u.heroId,
+  ];
 
   BattlePhase phase = BattlePhase.plan;
   bool inputLocked = false;

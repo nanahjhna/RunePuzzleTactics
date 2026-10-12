@@ -17,8 +17,9 @@
 /// └──────────────────────────────────────────────┘
 /// ```
 ///
-/// **상성**: 몬스터는 무속성이지만 상성은 있다 — 스테이지가 약점/열세 속성을
-/// 갖는다([StageConfig.affinityFor]). [_MonsterAffinityRow] 가 출격 전에 공개한다.
+/// **상성**: 몬스터는 무속성이지만 상성은 있다 — 파도 전투에서는 **몬스터마다**
+/// 약점/열세 속성을 갖는다([WaveMonster.affinityFor]). [_MonsterWaveView] 가
+/// 마리별로, 단일 몬스터면 [_MonsterAffinityRow] 한 줄로 출격 전에 공개한다.
 /// 속성 집계([partyElementLine])는 배율 없이 인원수만 보여준다.
 ///
 /// **파티 인라인 편집**: 1x5 슬롯은 공통 [PartySlots] 이고, 빈 자리의 `+` 로
@@ -226,15 +227,20 @@ class _StagePrepCardState extends State<_StagePrepCard> {
 
                 // ── 속성 집계 + 스테이지 상성 ──
                 // 배율 숫자는 없다. 같은 속성 영웅의 공격력 합이 그 색 매칭 데미지의
-                // 밑이라 인원수만 보여주고, 배율이 붙는 경우는 몬스터 약점/열세
-                // 두 줄로 정직하게 알린다.
+                // 밑이라 인원수만 보여주고, 배율이 붙는 경우는 몬스터 약점/열세로
+                // 정직하게 알린다. 파도 전투는 마리별로 나열한다(먼저 잡을 녀석).
                 Text(
                   partyElementLine(l10n, _progress),
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white60, fontSize: 12),
                 ),
                 const SizedBox(height: 8),
-                _MonsterAffinityRow(stage: widget.stageConfig),
+                if (widget.stageConfig.monsterCount > 1)
+                  _MonsterWaveView(stage: widget.stageConfig)
+                else
+                  _MonsterAffinityRow(
+                    monster: widget.stageConfig.monsterAt(0),
+                  ),
                 const SizedBox(height: 12),
 
                 // ── 영웅 **개별** 스탯 (드래곤퀘스트식) ──
@@ -365,10 +371,12 @@ class _StagePrepCardState extends State<_StagePrepCard> {
 ///
 /// 전투 HUD 에도 같은 정보가 뜨지만, **출격 전에** 상성을 아는 것과 보드
 /// 보면서 다시 확인하는 건 다르다. 편성 단계에서 미리 보고 색을 고를 수 있게 한다.
+///
+/// 파도 전투에서는 마리마다 상성이 다르므로 [WaveMonster] 한 마리씩 받는다.
 class _MonsterAffinityRow extends StatelessWidget {
-  const _MonsterAffinityRow({required this.stage});
+  const _MonsterAffinityRow({required this.monster});
 
-  final StageConfig stage;
+  final WaveMonster monster;
 
   @override
   Widget build(BuildContext context) {
@@ -378,14 +386,14 @@ class _MonsterAffinityRow extends StatelessWidget {
       children: [
         _chip(
           l10n,
-          element: stage.weakElement,
+          element: monster.weakElement,
           label: l10n.tr('battle_monster_weak'),
           color: AppColors.accent,
         ),
         const SizedBox(width: 6),
         _chip(
           l10n,
-          element: stage.resistElement,
+          element: monster.resistElement,
           label: l10n.tr('battle_monster_resist'),
           color: Colors.white38,
         ),
@@ -419,6 +427,52 @@ class _MonsterAffinityRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 파도 전투 준비 미리보기 — "몬스터 {n}마리" + 마리별 약점/열세 줄.
+///
+/// 파도 전투에서는 몬스터마다 약점/열세가 달라 "먼저 잡을 녀석"이 선택지가
+/// 된다. 각 마리가 어느 속성에 약한지 출격 전에 나열해 색 고르기를 미리
+/// 가능하게 한다. 단일 몬스터 스테이지는 [_MonsterAffinityRow] 한 줄만 쓴다.
+class _MonsterWaveView extends StatelessWidget {
+  const _MonsterWaveView({required this.stage});
+
+  final StageConfig stage;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = LanguageScope.of(context).strings;
+    final count = stage.monsterCount;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          l10n.trp('stage_prep_monster_count', {'n': '$count'}),
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 6),
+        for (var i = 0; i < count; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 1),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '#${i + 1}',
+                  style: const TextStyle(color: Colors.white54, fontSize: 11),
+                ),
+                const SizedBox(width: 6),
+                _MonsterAffinityRow(monster: stage.monsterAt(i)),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }

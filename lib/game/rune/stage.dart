@@ -7,10 +7,55 @@ import 'rune_element.dart';
 /// 스테이지 종류 (RPT-173)
 enum StageType { normal, elite, boss }
 
+/// 파도(연속 등장) 전투에서 **순서대로 등장하는 몬스터 1마리**.
+///
+/// [StageConfig.wave] 에 담긴다. [BattleState] 는 이 목록의 **현재 등장 중인
+/// 몬스터**([BattleState.currentMonster])를 HP·공격·약점/열세의 단일 권위로
+/// 삼는다 — 파도 전투에서는 마리마다 상성/공격이 다르므로 스테이지 전체 값을
+/// 읽으면 안 된다.
+class WaveMonster {
+  const WaveMonster({
+    required this.name,
+    required this.hp,
+    required this.attack,
+    required this.weakElement,
+    required this.resistElement,
+  });
+
+  /// 표시 이름 (파도 몬스터끼리는 같은 종류 이름을 공유한다).
+  final String name;
+
+  /// 이 몬스터의 최대 HP.
+  final int hp;
+
+  /// 이 몬스터의 공격력 (몬스터 턴 반격의 단일 권위).
+  final int attack;
+
+  /// 이 몬스터의 약점 속성 — 이 속성 매칭은 ×1.5.
+  final RuneElement weakElement;
+
+  /// 이 몬스터의 열세 속성 — 이 속성 매칭은 ×0.5.
+  final RuneElement resistElement;
+
+  /// 매칭 속성 [atk] 의 상성 배율 — [StageConfig] 의 배율 상수와 반드시 같은 값.
+  double affinityFor(RuneElement atk) {
+    if (atk == weakElement) return StageConfig.weakAffinity;
+    if (atk == resistElement) return StageConfig.resistAffinity;
+    return StageConfig.neutralAffinity;
+  }
+
+  /// 매칭 속성 [atk] 가 이 몬스터의 약점인가 (UI 뱃지용).
+  bool isWeakAgainst(RuneElement atk) => atk == weakElement;
+}
+
 /// 스테이지별 밸런스 설정 (RPT-186).
 ///
 /// 몬스터는 **무속성**이다. 그래도 상성은 있다 — 몬스터가 어느 속성인지가 아니라
 /// **이 스테이지가 어느 속성에 약하고 어느 속성에 강한지**로 정한다.
+///
+/// 파도 전투([wave] 비어 있지 않음)에서는 **몬스터마다** 약점/열세/HP/공격이
+/// 따로 있다. 레거시 필드([monsterHp]/[monsterAttack]/[weakElement]/
+/// [resistElement]/[monsterName])는 wave 가 비어 있을 때만 단일 몬스터를 대신한다.
 class StageConfig {
   const StageConfig({
     required this.stageNumber,
@@ -27,6 +72,7 @@ class StageConfig {
     this.bossUltimateDamage = 100,
     this.monsterName = 'Slime',
     this.subtitle = '',
+    this.wave = const [],
   });
 
   final int stageNumber;
@@ -87,6 +133,29 @@ class StageConfig {
 
   /// 몬스터 한 줄 설명 (준비 모달 서브타틀, 예: "위험한 화염 몬스터의 둥지").
   final String subtitle;
+
+  /// 파도 몬스터 목록. **비어 있으면 레거시 단일 몬스터** — 기존 필드값이
+  /// 1마리짜리 [WaveMonster] 로 파생되며(튜토리얼·보스), 비어 있지 않으면
+  /// [WaveMonster] 가 **한 마리씩 순서대로** 등장하고 다 잡으면 승리다.
+  ///
+  /// 파도가 비어 있지 않을 때 [monsterHp]/[monsterAttack]/[weakElement]/
+  /// [resistElement]/[monsterName] 는 "합계/대표값"일 뿐이며, 엔진·HUD는
+  /// [BattleState.currentMonster] (≡ [monsterAt] 의 현재 인덱스)를 읽는다.
+  final List<WaveMonster> wave;
+
+  /// 등장 몬스터 수. [wave] 가 비어 있으면 1(레거시 단일).
+  int get monsterCount => wave.isEmpty ? 1 : wave.length;
+
+  /// i 번째(0-based) 등장 몬스터. [wave] 가 비어 있으면 레거시 단일값에서 파생.
+  WaveMonster monsterAt(int i) => wave.isEmpty
+      ? WaveMonster(
+          name: monsterName,
+          hp: monsterHp,
+          attack: monsterAttack,
+          weakElement: weakElement,
+          resistElement: resistElement,
+        )
+      : wave[i];
 
   bool get isBoss => type == StageType.boss;
 }
@@ -217,6 +286,35 @@ class StageGenerator {
         .round();
     final gold = (baseGold * (1 + stageNumber * 0.04)).round();
 
+    // ── 파도 구성 (RPT 파도 전투) ──
+    // 일반 2마리·정예 3마리를 **순차 등장**시킨다. 보스는 단독(파도 없음) —
+    // 궁극기/카운트다운이 단일 몬스터 전제이기 때문이다.
+    //
+    // HP는 기존 `monsterHp`(합계)를 마리 수로 나눈다 — 합계가 그대로라
+    // 스테이지별 밸런스 곡선이 전과 동일하게 유지된다. 나머지는 마지막 마리에.
+    //
+    // 약점/열세는 몬스터 인덱스만큼 어긋나게 배정한다(예: 1번째 불/풀,
+    // 2번째 풀/물). 3마리 연속이라도 5속성 순환 안에서 절대 겹치지 않는다 —
+    // "먼저 잡을 색"을 마리마다 다르게 줘서 플레이어가 처치 순서를 고르게 한다.
+    final waveCount = switch (type) {
+      StageType.boss => 1,
+      StageType.normal => 2,
+      StageType.elite => 3,
+    };
+    final wave = <WaveMonster>[
+      for (var i = 0; i < waveCount; i++)
+        WaveMonster(
+          name: monsterNameFor(stageNumber),
+          hp: waveCount > 1
+              ? (monsterHp ~/ waveCount) +
+                  (i == waveCount - 1 ? monsterHp % waveCount : 0)
+              : monsterHp,
+          attack: monsterAttack,
+          weakElement: weakElementFor(stageNumber + i),
+          resistElement: resistElementFor(stageNumber + i),
+        ),
+    ];
+
     return StageConfig(
       stageNumber: stageNumber,
       type: type,
@@ -237,6 +335,8 @@ class StageGenerator {
       goldReward: gold,
       monsterName: monsterNameFor(stageNumber),
       subtitle: monsterSubtitleFor(stageNumber),
+      // 보스 외에는 파도 목록을 실어 순차 등장시킨다.
+      wave: type == StageType.boss ? const [] : wave,
     );
   }
 }

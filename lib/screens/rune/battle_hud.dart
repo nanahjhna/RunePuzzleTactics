@@ -196,12 +196,16 @@ class BattleHudRows extends StatelessWidget {
         child: Column(
           children: [
             // 몬스터 영역: HP 바 → 스프라이트.
+            // 상성은 파도 전투에서 몬스터마다 다르므로 항상 **현재 등장 중인
+            // 몬스터**([BattleState.currentMonster]) 기준으로 표시한다.
             BattleMonsterPanel(
               spriteHeight: metrics.monsterSpriteHeight,
               monsterHp: s.monsterHp,
               monsterMaxHp: s.monsterMaxHp,
-              weakElement: s.stage.weakElement,
-              resistElement: s.stage.resistElement,
+              weakElement: s.currentMonster.weakElement,
+              resistElement: s.currentMonster.resistElement,
+              monsterNumber: s.monsterNumber,
+              monsterCount: s.monsterCount,
               poisonStacks: s.poisonStacks,
               poisonPerStack: s.poisonPerStack,
               sprite: sprite,
@@ -229,11 +233,13 @@ class BattleHudRows extends StatelessWidget {
   }
 }
 
-/// 몬스터 HUD: 상성 칩 → HP 바 → 몬스터 스프라이트.
+/// 몬스터 HUD: 상성 칩 → (파도 진행) → HP 바 → 몬스터 스프라이트.
 ///
-/// 몬스터는 무속성이지만 상성은 있다 — **스테이지가 약점/열세 속성을 갖는다**
-/// ([StageConfig.affinityFor]). 배율이 붙는 이유를 숨기면 플레이어가 "왜 불색만
-/// 계속 때려야 하지?"를 설명할 수 없으므로, 칩 두 개로 정직하게 공개한다.
+/// 몬스터는 무속성이지만 상성은 있다 — **현재 등장 중인 몬스터가 약점/열세
+/// 속성을 갖는다** ([WaveMonster.affinityFor]). 파도 전투에서는 몬스터가 바뀔
+/// 때마다 이 칩도 함께 바뀐다([BattleState.currentMonster]). 배율이 붙는 이유를
+/// 숨기면 플레이어가 "왜 불색만 계속 때려야 하지?"를 설명할 수 없으므로, 칩
+/// 두 개로 정직하게 공개한다.
 class BattleMonsterPanel extends StatelessWidget {
   const BattleMonsterPanel({
     super.key,
@@ -242,6 +248,8 @@ class BattleMonsterPanel extends StatelessWidget {
     required this.monsterMaxHp,
     required this.weakElement,
     required this.resistElement,
+    required this.monsterNumber,
+    required this.monsterCount,
     this.poisonStacks = 0,
     this.poisonPerStack = 0,
     this.sprite,
@@ -256,6 +264,12 @@ class BattleMonsterPanel extends StatelessWidget {
 
   /// 이 스테이지의 열세 속성 — 매칭 데미지 ×0.5.
   final RuneElement resistElement;
+
+  /// 파도 진행 — 현재 n번째 등장 몬스터 (1-based).
+  final int monsterNumber;
+
+  /// 파도 총 몬스터 수. 1이면(단일 몬스터) 진행 칩을 그리지 않는다.
+  final int monsterCount;
 
   /// 몬스터에 걸린 독 스택 수. 0 이면 칩을 그리지 않는다.
   ///
@@ -308,6 +322,22 @@ class BattleMonsterPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
+        // 파도 진행 칩 — 단일 몬스터(1마리)면 숨겨 기존 배치를 그대로 유지한다.
+        if (monsterCount > 1) ...[
+          Text(
+            l10n.trp('battle_monster_wave', {
+              'i': '$monsterNumber',
+              'n': '$monsterCount',
+            }),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white60,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
         Center(
           child: SizedBox(
             width: 110,

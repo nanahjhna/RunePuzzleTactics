@@ -100,6 +100,9 @@ class BattleEngine {
   /// 테스트는 시드를 주어 **누가 맞는지까지** 결정적으로 만든다.
   final Random rng;
 
+  /// 파도 몬스터 처치 보상: 살아있는 영웅 전원이 최대 HP의 이 비율만큼 회복한다.
+  static const double waveHealRatio = 0.20;
+
   /// 직전에 몬스터 반격을 맞은 영웅 id (연속 타겟 방지).
   String? _lastTargetHeroId;
 
@@ -152,6 +155,52 @@ class BattleEngine {
     if (state.paused) return;
     _startPlayerTurn();
   }
+
+  // ── 파도 처치 보상 (wave kill reward) ──
+
+  /// 파도 몬스터를 **처치**했을 때 보상을 적용한다 ([advanceMonster] 직후 호출).
+  ///
+  /// 1. 살아있는 영웅 전원이 최대 HP의 [waveHealRatio] 만큼 회복한다 (부활 없음,
+  ///    [PartyHeroUnit.heal] 이 최대 HP 에서 잘라 준다). 실제 회복 합계를
+  ///    [BattleState.waveKillHeal] 에 기록해 UI 가 "파티 HP +N" 으로 표기한다.
+  /// 2. 스킬을 **이미 쓴** 살아있는 영웅이 있으면 [BattleState.skillRechargePending]
+  ///    을 세운다 — 플레이어가 **1명만** 골라 스킬을 다시 쓸 수 있게 한다
+  ///    (선택은 UI 모달 → [resolveSkillRecharge] / [skipSkillRecharge]).
+  ///
+  /// 마지막 몬스터 처치는 승리로 즉시 끝나므로 보상이 없다. 보스/튜토리얼처럼
+  /// 단일 몬스터 스테이지도 [advanceMonster] 가 false 를 반환해 이 메서드는
+  /// 불리지 않는다.
+  void _applyWaveKillReward() {
+    var totalHealed = 0;
+    for (final unit in state.units) {
+      if (unit.isDown) continue;
+      totalHealed += unit.heal((unit.maxHp * waveHealRatio).round());
+    }
+    state.waveKillHeal = totalHealed;
+    state.skillRechargePending = state.skillRechargeCandidates.isNotEmpty;
+    state.waveKillSerial++;
+  }
+
+  /// 플레이어가 파도 처치 보상으로 스킬을 충전할 영웅을 골랐다.
+  ///
+  /// [BattleState.skillRechargeCandidates] 에 없는 영웅(안 쓴/쓰러진/스킬 없는
+  /// 영웅)이면 아무 일도 하지 않고 false 를 돌려준다. 충전되면 해당 유닛의
+  /// [PartyHeroUnit.skillUsed] 를 false 로 되돌려 남은 스테이지에서 다시 쓸 수
+  /// 있게 한다 — 스테이지당 1회 제한을 **보상으로만** 푸는 유일한 경로다.
+  bool resolveSkillRecharge(String heroId) {
+    if (!state.skillRechargePending) return false;
+    for (final unit in state.units) {
+      if (unit.heroId != heroId) continue;
+      if (unit.isDown || !unit.skillUsed || unit.skill == null) return false;
+      unit.skillUsed = false;
+      state.skillRechargePending = false;
+      return true;
+    }
+    return false;
+  }
+
+  /// 플레이어가 파도 처치 보상의 스킬 충전을 건너뛴다.
+  void skipSkillRecharge() => state.skillRechargePending = false;
 
   /// 첫 조작 보조: PLAN → ACTION 전환만 한다.
   void onFirstTouch() {
@@ -428,9 +477,10 @@ class BattleEngine {
           // 없어도 단색/다색 편성이 자연스럽게 반영된다 — 같은 색 영웅이 많을수록
           // 합이 크고, 다른 색 룬을 맞히면 이 색의 공격력은 전혀 반영되지 않는다.
           final elementAtk = state.attackForElement(run.element);
-          // 상성은 몬스터 속성이 아니라 **스테이지**가 정한다 (약점 1.5 / 중립 1.0 /
-          // 열세 0.5).
-          final affinity = state.stage.affinityFor(run.element);
+          // 상성은 **현재 등장 중인 몬스터**가 정한다 (약점 1.5 / 중립 1.0 /
+          // 열세 0.5). 파도 전투에서는 마리마다 약점/열세가 다르므로 스테이지
+          // 전체 값을 읽으면 안 된다.
+          final affinity = state.currentMonster.affinityFor(run.element);
           final dmg = damageCalc.matchDamage(
             elementAttackSum: elementAtk,
             combo: wave.combo,
@@ -447,7 +497,7 @@ class BattleEngine {
               waveNumber: wave.waveNumber,
               cells: run.cells,
               combo: wave.combo,
-              weaknessHit: state.stage.isWeakAgainst(run.element),
+              weaknessHit: state.currentMonster.isWeakAgainst(run.element),
               affinityMultiplier: affinity,
               noElementHero: elementAtk == 0,
             ),
@@ -815,6 +865,18 @@ class BattleEngine {
   BattleResolveOutcome _finishTurnResolve() {
     // 최종 상태 판정 (RPT-147). Monster 사망 Victory 우선 (RPT-146).
     if (state.monsterHp <= 0) {
+      // 파도 전투: 현재 몬스터가 죽었는데 다음 몬스터가 남아 있으면 **다음 등장**
+      // 후 몬스터 턴 없이 플레이어 턴으로 넘어간다 — "한 마리 처치 = 그 턴은
+      // 안전"을 유지한다(승리할 때와 같은 틀). 마지막 몬스터면 기존처럼 승리.
+      if (state.advanceMonster()) {
+        _applyWaveKillReward();
+        state.combo = 0;
+        state.phase = BattlePhase.plan;
+        state.inputLocked = false;
+        _lastMonsterAttack = null;
+        _lastOutcome = BattleResolveOutcome.continued;
+        return _lastOutcome;
+      }
       state.phase = BattlePhase.victory;
       _lastMonsterAttack = null;
       return BattleResolveOutcome.victory;
@@ -836,9 +898,19 @@ class BattleEngine {
   void _runMonsterTurn() {
     _lastMonsterAttack = null;
     _applyPoisonTick();
-    // 독이 마지막 HP 를 깎았으면 **반격 없이** 승리로 끝낸다. 보스 궁극기도 못 쓴다
+    // 독이 마지막 HP 를 깎았으면 **반격 없이** 처리한다. 보스 궁극기도 못 쓴다
     // — 지속 피해가 "늦어도 결국 죽는다"를 남겨야 독 스택이 아깝지 않다.
     if (state.monsterHp <= 0) {
+      // 파도 전투: 다음 몬스터가 있으면 반격 없이 다음 등장으로 넘어간다
+      // (매칭/스킬 처치와 같은 규칙 — 처치한 턴은 안전).
+      if (state.advanceMonster()) {
+        _applyWaveKillReward();
+        state.combo = 0;
+        state.phase = BattlePhase.plan;
+        state.inputLocked = false;
+        _lastOutcome = BattleResolveOutcome.continued;
+        return;
+      }
       state.phase = BattlePhase.victory;
       _lastOutcome = BattleResolveOutcome.victory;
       return;
@@ -934,7 +1006,7 @@ class BattleEngine {
     }
     _lastTargetHeroId = target.heroId;
     final breakdown = damageCalc.incomingDamage(
-      attack: state.stage.monsterAttack,
+      attack: state.currentMonster.attack,
       defenderDefense: target.defense,
     );
     final hpBefore = target.hp;
