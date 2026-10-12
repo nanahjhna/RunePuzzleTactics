@@ -1097,7 +1097,7 @@ class RuneProgress {
         final kind = HeroStatKind.values
             .where((k) => k.name == s.key)
             .firstOrNull;
-        final level = (s.value as num?)?.toInt();
+        final level = (s.value is num) ? s.value.toInt() : null;
         if (kind == null || level == null || level <= 0) continue;
         stats[kind] = level.clamp(1, HeroStatUpgrades.of(kind).maxLevel);
       }
@@ -1116,7 +1116,7 @@ class RuneProgress {
     for (final entry in raw.entries) {
       final id = entry.key;
       if (id is! String || HeroPool.byId(id) == null) continue;
-      final v = (entry.value as num?)?.toInt();
+      final v = (entry.value is num) ? entry.value.toInt() : null;
       if (v == null || v < 0 || v >= HeroRarity.values.length) continue;
       map[id] = v;
     }
@@ -1133,7 +1133,7 @@ class RuneProgress {
     for (final entry in raw.entries) {
       final id = entry.key;
       if (id is! String || HeroPool.byId(id) == null) continue;
-      final v = (entry.value as num?)?.toInt();
+      final v = (entry.value is num) ? entry.value.toInt() : null;
       if (v == null) continue;
       final level = v.clamp(HeroLevel.minLevel, HeroLevel.maxLevel);
       if (level > HeroLevel.minLevel) map[id] = level;
@@ -1148,7 +1148,7 @@ class RuneProgress {
     for (final entry in raw.entries) {
       final id = entry.key;
       if (id is! String || HeroPool.byId(id) == null) continue;
-      final v = (entry.value as num?)?.toInt();
+      final v = (entry.value is num) ? entry.value.toInt() : null;
       if (v == null || v <= 0) continue;
       map[id] = v;
     }

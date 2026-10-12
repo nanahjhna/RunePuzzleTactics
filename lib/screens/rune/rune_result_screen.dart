@@ -19,6 +19,7 @@ import '../../theme/ui_sprites.dart';
 import '../../widgets/card_art.dart';
 import '../../widgets/glass_surface.dart';
 import '../../widgets/gradient_button.dart';
+import '../../widgets/hero_portrait.dart';
 import '../../widgets/play_shortage_dialog.dart';
 import '../../widgets/rewarded_ad_helper.dart';
 
@@ -40,6 +41,7 @@ class RuneResultScreen extends StatelessWidget {
     this.damageSummary,
     this.heroStats,
     this.levelUps = const [],
+    this.progress,
     this.playCurrency,
     this.onRewardAdPlay,
     this.onShopRequested,
@@ -59,6 +61,10 @@ class RuneResultScreen extends StatelessWidget {
 
   /// 이번 전투에서 오른 레벨 목록 (승리 EXP). 비어 있으면 레벨업 카드를 숨긴다.
   final List<HeroLevelUp> levelUps;
+
+  /// 승리 EXP 반영 후의 진행도. 영웅 초상화 아래 Lv/EXP 표시에 쓴다.
+  /// null이면(패배/저장소 없는 직접 진입) 영웅 성장 영역을 숨긴다.
+  final RuneProgress? progress;
 
   /// 결과 시점의 현재 Play 잔액 (입장 비용 소모 후 기준, 요구사항 6.3).
   /// null이면(저장소 없는 직접 진입/테스트) 사전 검증을 생략한다.
@@ -201,12 +207,6 @@ class RuneResultScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 14),
 
-                          // 레벨 업 카드 (승리 EXP 로 오른 영웅) — 없으면 숨긴다.
-                          if (levelUps.isNotEmpty) ...[
-                            _LevelUpCard(levelUps: levelUps),
-                            const SizedBox(height: 14),
-                          ],
-
                           // 파티 요약 카드 (글래스, 프롬프트 §38: Current Party / Synergy / Party Attack)
                           GlassSurface(
                             padding: const EdgeInsets.all(14),
@@ -289,10 +289,18 @@ class RuneResultScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 12),
                           _DamageAnalysisCard(summary: combat),
-                          if (heroStats case final list?
-                              when list.isNotEmpty) ...[
+                          // 영웅 성장: 편성 영웅 초상화 + 각자 Lv/EXP 진행/획득 EXP.
+                          // 패배(EXP 미지급)이거나 진행도가 없으면 숨긴다.
+                          if (win &&
+                              progress != null &&
+                              party.partyTotal > 0) ...[
                             const SizedBox(height: 12),
-                            _HeroStatsCard(stats: list),
+                            _HeroExpCard(
+                              heroes: party.partyHeroes,
+                              progress: progress!,
+                              levelUps: levelUps,
+                              stageNumber: stageNumber,
+                            ),
                           ],
                           const SizedBox(height: 18),
                         ],
@@ -616,15 +624,37 @@ class _IncomingDamageRow extends StatelessWidget {
   }
 }
 
-class _HeroStatsCard extends StatelessWidget {
-  const _HeroStatsCard({required this.stats});
+/// 영웅 성장 카드 — 편성 영웅 초상화를 나란히 놓고, 각 초상화 아래에
+/// Lv(레벨업 시 `Lv.from → Lv.to`), EXP 진행 바, 이번 전투 획득 EXP 를 표시한다.
+///
+/// 기존 [result_party_stat_breakdown](영웅별 최종 스탯) 카드를 대체한다.
+/// 레벨/EXP 는 [RuneProgress] 에만 있으므로 승리 EXP 반영 후 진행도를 받는다.
+class _HeroExpCard extends StatelessWidget {
+  const _HeroExpCard({
+    required this.heroes,
+    required this.progress,
+    required this.levelUps,
+    required this.stageNumber,
+  });
 
-  /// 편성 영웅 **개별** 최종 스탯. 합계가 아니라 각자 값을 보여준다.
-  final List<HeroCombatStats> stats;
+  /// 편성 영웅 정의 목록 (편성 순서). 초상화/이름 출처.
+  final List<RuneHeroDef> heroes;
+
+  /// 승리 EXP 반영 후 진행도 — 레벨·EXP 진행도·만렙 여부 출처.
+  final RuneProgress progress;
+
+  /// 이번 전투에서 오른 레벨 (초상화 타일의 from→to 강조에 사용).
+  final List<HeroLevelUp> levelUps;
+
+  /// 이번 전투의 EXP 획득량 계산 기준 스테이지.
+  final int stageNumber;
 
   @override
   Widget build(BuildContext context) {
     final l10n = LanguageScope.of(context).strings;
+    // 편성 영웅 전원이 같은 양의 승리 EXP 를 받는다(만렙은 제외).
+    final gain = HeroLevel.expForVictory(stageNumber);
+    final upByHero = {for (final u in levelUps) u.heroId: u};
     return GlassSurface(
       padding: const EdgeInsets.all(14),
       art: const CardArt.fill(kCardArtResultStats),
@@ -632,41 +662,115 @@ class _HeroStatsCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            l10n.tr('result_party_stat_breakdown'),
+            l10n.tr('result_hero_exp_title'),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 14,
               fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(height: 8),
-          for (final s in stats) ...[
-            Text(
-              l10n.tr('hero_name_${s.heroId}'),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Text(
-                '${l10n.tr('stat_hp')} ${s.hp}  '
-                '${l10n.tr('stat_atk')} ${s.attack}  '
-                '${l10n.tr('stat_def')} ${s.defense}',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final hero in heroes)
+                Expanded(
+                  child: _HeroExpTile(
+                    hero: hero,
+                    level: progress.heroLevel(hero.heroId),
+                    ratio: progress.heroExpRatio(hero.heroId),
+                    maxed: progress.isHeroMaxLevel(hero.heroId),
+                    gain: gain,
+                    levelUp: upByHero[hero.heroId],
+                  ),
                 ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 영웅 1명 타일 — 초상화 + 이름 + Lv/EXP 진행 바 + 획득 EXP.
+class _HeroExpTile extends StatelessWidget {
+  const _HeroExpTile({
+    required this.hero,
+    required this.level,
+    required this.ratio,
+    required this.maxed,
+    required this.gain,
+    this.levelUp,
+  });
+
+  final RuneHeroDef hero;
+  final int level;
+  final double ratio;
+  final bool maxed;
+  final int gain;
+
+  /// 이번 전투에서 이 영웅이 오른 레벨. null이면 변화 없음.
+  final HeroLevelUp? levelUp;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = LanguageScope.of(context).strings;
+    final up = levelUp;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: Column(
+        children: [
+          HeroPortrait(hero: hero, size: 52, showElementBadge: true),
+          const SizedBox(height: 6),
+          Text(
+            l10n.tr('hero_name_${hero.heroId}'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            up == null
+                ? '${l10n.tr('hero_level_label')} $level'
+                : l10n.trp('result_level_up_line', {
+                    'from': up.fromLevel,
+                    'to': up.toLevel,
+                  }),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: up == null ? Colors.white70 : AppColors.accentGold,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: ratio,
+              minHeight: 6,
+              backgroundColor: Colors.white12,
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                AppColors.accentGold,
               ),
             ),
-            const SizedBox(height: 6),
-          ],
+          ),
+          const SizedBox(height: 4),
           Text(
-            l10n.tr('result_stat_breakdown_legend'),
-            style: const TextStyle(color: Colors.white38, fontSize: 10),
+            maxed
+                ? l10n.tr('hero_level_max')
+                : l10n.trp('result_hero_exp_gain', {'n': gain}),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: maxed ? Colors.white38 : AppColors.accent,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ],
       ),

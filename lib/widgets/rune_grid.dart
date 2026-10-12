@@ -185,6 +185,7 @@ class HeroGridTile extends StatelessWidget {
     required this.hero,
     required this.owned,
     required this.inParty,
+    this.level = 1,
     this.onTap,
     this.tapKey,
   });
@@ -196,6 +197,9 @@ class HeroGridTile extends StatelessWidget {
 
   /// 현재 파티 편성 여부. 편성 중이면 초록 테두리 + "편성중" 배지.
   final bool inParty;
+
+  /// 영웅 레벨 ([RuneProgress.heroLevel]). 보유 타일 좌상단에 `Lv.N` 으로 뜬다.
+  final int level;
 
   /// 탭 동작. null 이면 비활성(탭해도 아무 일도 없다).
   final VoidCallback? onTap;
@@ -224,14 +228,33 @@ class HeroGridTile extends StatelessWidget {
           children: [
             SizedBox(
               height: 9,
-              // 편성 중 / 🔒 만 남긴다. 등급 별(★) 표시는 전 화면에서 삭제했다.
-              child: inParty
-                  ? _TileBadge(
-                      text: l10n.tr('party_picker_assigned'),
-                      color: AppColors.green,
+              // 보유: 좌측 레벨 뱃지(+ 편성 중이면 우측 "편성중"). 미보유: 🔒.
+              // 6열이라 타일이 좁아 FittedBox 로 넘침을 막는다.
+              child: owned
+                  ? Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: _TileBadge(
+                              text: 'Lv.$level',
+                              color: AppColors.accentGold,
+                            ),
+                          ),
+                        ),
+                        if (inParty)
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: _TileBadge(
+                                text: l10n.tr('party_picker_assigned'),
+                                color: AppColors.green,
+                              ),
+                            ),
+                          ),
+                      ],
                     )
-                  : owned
-                  ? const SizedBox.shrink()
                   : const Text(
                       '🔒',
                       style: TextStyle(fontSize: 7, height: 1.1),

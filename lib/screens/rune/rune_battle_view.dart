@@ -89,6 +89,12 @@ class _RuneBattleViewState extends State<RuneBattleView> {
   /// 전투 시작 시 주입한 스탯은 레벨업 이전 값이므로, 결과 화면에는 이 값을 쓴다.
   List<HeroCombatStats> _lastPostBattleStats = const [];
 
+  /// 승리 EXP/레벨업 반영 후의 진행도(결과 화면의 영웅별 Lv/EXP 표시용).
+  ///
+  /// 결과 화면은 영웅 초상화 아래에 각 영웅의 레벨과 EXP 진행도를 그리는데,
+  /// 그 값은 [RuneProgress] 에만 있으므로 여기서 갱신본을 보관해 넘긴다.
+  RuneProgress? _lastPostBattleProgress;
+
   @override
   void initState() {
     super.initState();
@@ -183,18 +189,21 @@ class _RuneBattleViewState extends State<RuneBattleView> {
       }
       _progress = updated;
       // 결과 화면은 레벨업 반영 후 스탯을 보여줘야 하므로 여기서 미리 계산해 둔다.
+      // setState 를 저장(await) **이전**에 호출해, 저장이 느려도 1.5초 뒤 열리는
+      // 결과 화면이 이미 갱신된 levelUps 를 읽도록 한다.
       _lastLevelUps = levelUps;
+      _lastPostBattleProgress = updated;
       _lastPostBattleStats = [
         for (final h in updated.partyHeroDefs)
           updated.heroCombatStatsOf(h.heroId),
       ];
+      if (mounted) setState(() {});
       try {
         await store.save(updated);
       } catch (e, st) {
         widget.analytics?.recordError(e, st, context: 'rune progress save');
         widget.analytics?.logSaveError('rune_progress_save', e);
       }
-      if (mounted) setState(() {});
     }
     final an = widget.analytics;
     if (an != null) {
@@ -259,6 +268,7 @@ class _RuneBattleViewState extends State<RuneBattleView> {
       onBattleResult: _applyBattleResult,
       levelUps: _lastLevelUps,
       postBattleHeroStats: _lastPostBattleStats,
+      postBattleProgress: _lastPostBattleProgress,
     );
   }
 }
@@ -285,6 +295,7 @@ class _RuneBattleScreen extends StatefulWidget {
     this.onBattleResult,
     this.levelUps = const [],
     this.postBattleHeroStats = const [],
+    this.postBattleProgress,
   });
 
   final int stageNumber;
@@ -337,6 +348,9 @@ class _RuneBattleScreen extends StatefulWidget {
 
   /// 승리 EXP/레벨업 반영 후의 영웅별 스탯(결과 화면 표시). 비면 전투 스탯 폴백.
   final List<HeroCombatStats> postBattleHeroStats;
+
+  /// 승리 EXP/레벨업 반영 후의 진행도(결과 화면의 Lv/EXP 표시). null이면 숨김.
+  final RuneProgress? postBattleProgress;
 
   @override
   State<_RuneBattleScreen> createState() => _RuneBattleScreenState();
@@ -666,6 +680,8 @@ class _RuneBattleScreenState extends State<_RuneBattleScreen>
                     ? _battle.state.heroStats
                     : [for (final u in _battle.state.units) u.toCombatStats()]),
           levelUps: widget.levelUps,
+          // 영웅 초상화 아래 Lv/EXP 표시용 — 승리 EXP 반영 후 진행도.
+          progress: widget.postBattleProgress,
           // 요구사항 6.3: 결과 화면에서 재화 사전 검증(다음/재도전)에 사용.
           playCurrency: widget.playCurrency,
           onRewardAdPlay: widget.onRewardAdPlay,

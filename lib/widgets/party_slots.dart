@@ -84,6 +84,7 @@ class PartySlots extends StatelessWidget {
           _FilledSlot(
             hero: partyHeroes[i],
             partyHeroes: partyHeroes,
+            level: progress.heroLevel(partyHeroes[i].heroId),
             size: size,
             onTap: onHeroTap == null
                 ? null
@@ -135,6 +136,7 @@ class _FilledSlot extends StatelessWidget {
     required this.hero,
     required this.partyHeroes,
     required this.size,
+    this.level = 1,
     this.onTap,
     this.onLongPress,
   });
@@ -144,6 +146,9 @@ class _FilledSlot extends StatelessWidget {
   /// 같은 속성의 파티 편성 수 N (속성 카운트 배지 표기용).
   final List<RuneHeroDef> partyHeroes;
   final double size;
+
+  /// 영웅 레벨 ([RuneProgress.heroLevel]). 좌상단 `Lv.N` 뱃지로 표시.
+  final int level;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
@@ -156,10 +161,45 @@ class _FilledSlot extends StatelessWidget {
       showElementBadge: true,
       overlay: _ElementCountBadge(count: n),
     );
-    if (onTap == null && onLongPress == null) return portrait;
+    // 레벨 뱃지는 좌상단(속성 뱃지는 우상단)에 겹쳐 그린다.
+    final framed = Stack(
+      children: [
+        portrait,
+        Positioned(left: 0, top: 0, child: _LevelBadge(level: level)),
+      ],
+    );
+    if (onTap == null && onLongPress == null) return framed;
     return Material(
       color: Colors.transparent,
-      child: InkWell(onTap: onTap, onLongPress: onLongPress, child: portrait),
+      child: InkWell(onTap: onTap, onLongPress: onLongPress, child: framed),
+    );
+  }
+}
+
+/// 초상화 좌상단 레벨 배지: `Lv.N`.
+class _LevelBadge extends StatelessWidget {
+  const _LevelBadge({required this.level});
+
+  final int level;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: AppColors.accentGold.withValues(alpha: 0.5)),
+      ),
+      child: Text(
+        'Lv.$level',
+        style: const TextStyle(
+          color: AppColors.accentGold,
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
+          height: 1.1,
+        ),
+      ),
     );
   }
 }

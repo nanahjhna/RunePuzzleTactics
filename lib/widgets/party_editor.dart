@@ -180,6 +180,7 @@ class _HeroPickerSheetState extends State<_HeroPickerSheet> {
                       hero: hero,
                       owned: true,
                       inParty: inParty,
+                      level: widget.progress.heroLevel(hero.heroId),
                       tapKey: ValueKey('picker-hero-${hero.heroId}'),
                       // 편성은 여기서 하지 않는다. 고른 영웅을 시트 밖으로
                       // 돌려주고 [showHeroPickerSheet] 이 살아있는 컨텍스트에서

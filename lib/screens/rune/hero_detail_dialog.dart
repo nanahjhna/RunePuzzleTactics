@@ -166,6 +166,8 @@ class _HeroDetailDialogState extends State<_HeroDetailDialog> {
                 ],
               ),
               const SizedBox(height: 12),
+              _HeroLevelPanel(hero: hero, progress: progress),
+              const SizedBox(height: 12),
               _SectionTitle(text: l10n.tr('hero_detail_desc_label')),
               const SizedBox(height: 4),
               Text(
@@ -244,6 +246,83 @@ class _HeroDetailDialogState extends State<_HeroDetailDialog> {
   }
 }
 
+/// 영웅 레벨 + 경험치 바 + 레벨 보너스 한 줄.
+///
+/// 레벨은 재화가 아니라 **승리 EXP** 로만 오른다. 바는 다음 레벨까지의 진행이고,
+/// 만렙이면 MAX 로 잠근다. 레벨이 주는 스탯 상승은 유료 강화와 별개 합산이라
+/// 아래 강화 행의 화살표에는 섞이지 않는다([_HeroStatUpgradeRow._base] 참고).
+class _HeroLevelPanel extends StatelessWidget {
+  const _HeroLevelPanel({required this.hero, required this.progress});
+
+  final RuneHeroDef hero;
+  final RuneProgress progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = LanguageScope.of(context).strings;
+    final level = progress.heroLevel(hero.heroId);
+    final maxed = progress.isHeroMaxLevel(hero.heroId);
+    final exp = progress.heroExp(hero.heroId);
+    final next = progress.heroExpToNext(hero.heroId);
+    final ratio = progress.heroExpRatio(hero.heroId);
+    final bonus = progress.heroLevelBonus(hero.heroId);
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: AppColors.accentGold.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              _StatusBadge(
+                text: '${l10n.tr('hero_level_label')} $level',
+                color: AppColors.accentGold,
+              ),
+              const Spacer(),
+              Text(
+                maxed
+                    ? l10n.tr('hero_level_max')
+                    : l10n.trp('hero_exp_progress', {
+                        'exp': exp,
+                        'next': next,
+                      }),
+                style: const TextStyle(color: Colors.white54, fontSize: 11),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: ratio,
+              minHeight: 8,
+              backgroundColor: Colors.white12,
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                AppColors.accentGold,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${l10n.tr('hero_level_bonus')}  '
+            '${l10n.tr('stat_hp')} +${bonus.hp}  '
+            '${l10n.tr('stat_atk')} +${bonus.attack}  '
+            '${l10n.tr('stat_def')} +${bonus.defense}',
+            style: const TextStyle(color: Colors.white54, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 팝업 내 소제목.
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle({required this.text});
@@ -293,12 +372,16 @@ class _HeroStatUpgradeRow extends StatelessWidget {
     HeroStatKind.defense => progress.heroCombatStatsOf(hero.heroId).defense,
   };
 
-  /// 강화 전 개인 기본치.
-  int get _base => switch (config.kind) {
-    HeroStatKind.hp => hero.hp,
-    HeroStatKind.attack => hero.attack,
-    HeroStatKind.defense => hero.defense,
-  };
+  /// 강화 전 개인 기본치. **레벨 보너스는 포함**한다 — 그래야 `기본 → 현재`
+  /// 화살표가 유료 강화분만 가리키고, 레벨 성장은 위쪽 레벨 패널이 설명한다.
+  int get _base {
+    final levelBonus = progress.heroLevelBonus(hero.heroId);
+    return switch (config.kind) {
+      HeroStatKind.hp => hero.hp + levelBonus.hp,
+      HeroStatKind.attack => hero.attack + levelBonus.attack,
+      HeroStatKind.defense => hero.defense + levelBonus.defense,
+    };
+  }
 
   @override
   Widget build(BuildContext context) {

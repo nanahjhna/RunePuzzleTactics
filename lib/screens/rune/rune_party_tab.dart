@@ -203,6 +203,7 @@ class _CodexGrid extends StatelessWidget {
             hero: hero,
             owned: progress.isHeroOwned(hero.heroId),
             inParty: progress.isHeroInParty(hero.heroId),
+            level: progress.heroLevel(hero.heroId),
             tapKey: ValueKey('codex-hero-${hero.heroId}'),
             onTap: () => showHeroDetailDialog(
               context,
