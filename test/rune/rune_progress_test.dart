@@ -155,44 +155,70 @@ void main() {
       expect(r.progress.partyTotal, 1);
     });
 
-    test('중복 흡수: ★ 1단계뿐이라 승급 없이 maxed 처리 (등급은 전투 무영향)', () {
+    test('중복 영입: 뽑힌 영웅의 기존 카드가 +1 레벨 (등급 불변)', () {
       // 1스테이지 풀 5명을 전부 보유 → 다음 추첨은 반드시 중복
       final p = RuneMeta.initial().copyWith(
         heroCurrency: 100,
         heroOwned: {'fire_a', 'water_a', 'grass_a', 'light_a', 'poison_a'},
       );
-      // 전원 R 동률 → heroId 사전순(fire_a)이 흡수 대상
-      expect(p.topGradeHero?.heroId, 'fire_a');
 
       final r = p.tryPullHeroes(count: 1, rng: Random(0));
       expect(r.ok, isTrue);
-      // HeroRarity.next == this 이므로 promoted 는 발생하지 않는다.
-      expect(r.results.single.outcome, GachaOutcome.maxed);
-      expect(r.results.single.gradeBefore, HeroRarity.r);
-      expect(r.results.single.gradeAfter, HeroRarity.r);
-      expect(r.progress.heroGrade('fire_a'), HeroRarity.r);
-      // 원본 스냅샷 불변
-      expect(p.heroGrade('fire_a'), HeroRarity.r);
-      // 등급은 전투 수치에 영향 없음
-      expect(r.progress.baseAttackForBattle, p.baseAttackForBattle);
-      expect(r.progress.partyMaxHpForBattle, p.partyMaxHpForBattle);
+      final res = r.results.single;
+      // 이제 중복은 그 영웅의 카드 레벨업으로 소진된다.
+      expect(res.outcome, GachaOutcome.levelUp);
+      expect(res.gradeBefore, HeroRarity.r);
+      expect(res.gradeAfter, HeroRarity.r);
+      // 뽑힌 그 영웅이 Lv.1 → Lv.2 로 오른다.
+      expect(res.levelBefore, HeroLevel.minLevel);
+      expect(res.levelAfter, HeroLevel.minLevel + 1);
+      expect(r.progress.heroLevel(res.hero.heroId), HeroLevel.minLevel + 1);
+      expect(p.heroOwned.contains(res.hero.heroId), isTrue);
+      // 등급은 그대로 (레벨은 등급과 별개 축).
+      expect(r.progress.heroGrade(res.hero.heroId), HeroRarity.r);
+      // 원본 스냅샷은 불변.
+      expect(p.heroLevel(res.hero.heroId), HeroLevel.minLevel);
     });
 
-    test('중복이면 승급 대신 maxed (★ 2성 추가 시 promoted 로 바뀐다)', () {
-      // 풀을 넓혀(stage 8) 중복 확률을 만든다. 등급이 1단계뿐이라 흡수 대상은
-      // 등급 동률 → heroId 사전순 첫 영웅(= fire_a)으로 고정된다.
+    test('만렙 영웅 중복은 maxed (레벨 변화 없음)', () {
+      const ids = ['fire_a', 'water_a', 'grass_a', 'light_a', 'poison_a'];
+      final p = RuneMeta.initial().copyWith(
+        heroCurrency: 100,
+        heroOwned: {...ids},
+        // 어느 영웅이 뽑혀도 만렙이 되도록 전부 최대 레벨로 둔다.
+        heroLevels: {for (final id in ids) id: HeroLevel.maxLevel},
+      );
+
+      final r = p.tryPullHeroes(count: 1, rng: Random(0));
+      expect(r.ok, isTrue);
+      final res = r.results.single;
+      expect(res.outcome, GachaOutcome.maxed);
+      expect(res.levelBefore, HeroLevel.maxLevel);
+      expect(res.levelAfter, HeroLevel.maxLevel);
+      expect(r.progress.heroLevel(res.hero.heroId), HeroLevel.maxLevel);
+    });
+
+    test('10연 중복은 승급 대신 레벨업 (등급 불변)', () {
+      // 풀을 넓혀(stage 8) 중복 확률을 만든다.
       var p = RuneMeta.initial().copyWith(heroCurrency: 500);
       p = p.copyWith(highestCleared: 7);
-      expect(p.topGradeHero?.heroId, 'fire_a');
 
       final r = p.tryPullHeroes(count: 10, rng: Random(11));
       expect(r.ok, isTrue);
       expect(r.results.length, 10);
+      // 등급 승급은 발생하지 않는다.
       expect(
         r.results.every((e) => e.outcome != GachaOutcome.promoted),
         isTrue,
       );
-      // 흡수된 영웅의 등급도 그대로 R 이다 (승급 없음).
+      // 중복 횟수만큼 레벨업이 일어난다(전원 Lv.1 이라 maxed 는 없음).
+      final ids = r.results.map((e) => e.hero.heroId).toList();
+      final dupCount = ids.length - ids.toSet().length;
+      final levelUpCount = r.results
+          .where((e) => e.outcome == GachaOutcome.levelUp)
+          .length;
+      expect(levelUpCount, dupCount);
+      // 등급은 그대로 R.
       expect(r.progress.heroGrade('fire_a'), HeroRarity.r);
     });
 

@@ -9,7 +9,8 @@
 /// - **신규 영웅 공개 → 대형 파이어워크 스프라이트 버스트** (중복은 작은 스파클).
 /// - **스킵 버튼** — 회전 중 즉시 결과로 점프(재탭 impatient 방지).
 /// - 카드 교체마다 틱 사운드, 확정/신규/중복마다 다른 사운드.
-/// - 결과가 [GachaOutcome.promoted] 이면 승급 사실과 등급 이동을 함께 표기한다.
+/// - 결과가 [GachaOutcome.promoted] 이면 승급 사실과 등급 이동을,
+///   [GachaOutcome.levelUp] 이면 뽑힌 영웅의 `Lv.from → Lv.to` 를 함께 표기한다.
 ///
 /// 참고: [AlertDialog] 위에 [SpriteBurst] 를 얹기 위해 content 를
 /// [CenteredSpriteBurst] 로 감싼다. `BackdropFilter` 를 쓰지 않으므로 저사양에서도
@@ -436,6 +437,21 @@ class _SinglePullView extends StatelessWidget {
                 ),
               ),
             ],
+            // 중복 레벨업: 뽑힌 영웅의 카드가 오른 레벨(Lv.from → Lv.to).
+            if (result.outcome == GachaOutcome.levelUp) ...[
+              const SizedBox(height: 4),
+              Text(
+                l10n.trp('result_level_up_line', {
+                  'from': result.levelBefore,
+                  'to': result.levelAfter,
+                }),
+                style: const TextStyle(
+                  color: AppColors.accentGold,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
             OutlinedButton.icon(
               key: const ValueKey('gacha-detail'),
@@ -507,8 +523,8 @@ class _TenPullView extends StatelessWidget {
     final newCount = results
         .where((r) => r.outcome == GachaOutcome.newHero)
         .length;
-    final upCount = results
-        .where((r) => r.outcome == GachaOutcome.promoted)
+    final levelUpCount = results
+        .where((r) => r.outcome == GachaOutcome.levelUp)
         .length;
 
     return Padding(
@@ -516,8 +532,8 @@ class _TenPullView extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (newCount > 0 || upCount > 0)
-            _TenPullSummary(newCount: newCount, upCount: upCount)
+          if (newCount > 0 || levelUpCount > 0)
+            _TenPullSummary(newCount: newCount, levelUpCount: levelUpCount)
           else
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -576,10 +592,10 @@ class _TenPullView extends StatelessWidget {
 /// 신규 0명은 "아쉬움" 톤으로 가라앉히고, 신규가 있으면 초록 배지를 크게 띄워
 /// 결과를 한눈에 요약한다. 숫자만큼 **배너 자체가 커진다**(0 → 1.15 배 튐).
 class _TenPullSummary extends StatefulWidget {
-  const _TenPullSummary({required this.newCount, required this.upCount});
+  const _TenPullSummary({required this.newCount, required this.levelUpCount});
 
   final int newCount;
-  final int upCount;
+  final int levelUpCount;
 
   @override
   State<_TenPullSummary> createState() => _TenPullSummaryState();
@@ -637,10 +653,10 @@ class _TenPullSummaryState extends State<_TenPullSummary>
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              if (widget.upCount > 0) ...[
+              if (widget.levelUpCount > 0) ...[
                 const SizedBox(width: 10),
                 Text(
-                  '${l10n.tr('gacha_badge_promote')} ${widget.upCount}',
+                  '${l10n.tr('gacha_badge_levelup')} ${widget.levelUpCount}',
                   style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 12,
@@ -750,6 +766,10 @@ class _OutcomeBadge extends StatelessWidget {
         AppColors.accentGold,
       ),
       GachaOutcome.maxed => (l10n.tr('gacha_badge_max'), Colors.white38),
+      GachaOutcome.levelUp => (
+        l10n.tr('gacha_badge_levelup'),
+        AppColors.accentGold,
+      ),
     };
     return UiPill(
       size: UiPillSize.medium,

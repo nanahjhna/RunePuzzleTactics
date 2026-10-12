@@ -400,7 +400,8 @@ class RuneProgress {
   /// 동률이면 heroId 사전순으로 결정한다(저장/표시 흔들림 방지).
   ///
   /// 등급이 1단계뿐인 동안에는 전부 동률이라 heroId 사전순 첫 영웅이 잡힌다.
-  /// 그 결과 [tryPullHeroes] 의 중복 처리는 항상 [GachaOutcome.maxed] 로 끝난다.
+  /// **현재 중복 처리는 등급 승급 대신 뽑힌 영웅의 레벨업([grantHeroLevel])을
+  /// 쓰므로 이 getter 는 쓰이지 않는다** — ★ 2성 이상 재도입 대비로 남겨 둔다.
   RuneHeroDef? get topGradeHero {
     RuneHeroDef? best;
     var bestGrade = -1;
@@ -420,9 +421,8 @@ class RuneProgress {
   /// 랜덤 영입(뽑기) 시도 (Hero Currency 차감 + 보상 반영, 원자적).
   ///
   /// - [count] 회 추첨. 결과는 [GachaResult] 리스트로 반환되어 결과 팝업이 소비한다.
-  /// - 중복은 보유에 쌓이지 않고 **강화 재료**로 소진된다.
-  ///   흡수 대상 = [topGradeHero] (현재 최고 등급 영웅). 최고 등급이면 승급 없음.
-  ///   (현재 등급은 1단계뿐이라 항상 최고 등급 → [GachaOutcome.maxed].)
+  /// - 중복은 보유에 쌓이지 않고 **뽑힌 영웅 자신의 카드 레벨업**으로 소진된다
+  ///   (`+[HeroLevel.levelsPerDuplicate]` 레벨). 만렙이면 [GachaOutcome.maxed].
   /// - 자동 파티 편성은 하지 않는다 (프롬프트 §1).
   /// - [reason]: 'insufficient'(재화 부족), 'empty_pool'(가용 영웅 없음),
   ///   'invalid_count'(장수 1~10 아님).
@@ -509,35 +509,38 @@ class RuneProgress {
         heroPityCount: (p.heroPityCount + 1).clamp(0, heroPityThreshold),
       );
 
-      // 중복 → 최고 등급 영웅이 흡수(승급)
+      // 중복 → 뽑힌 그 영웅의 기존 카드가 레벨업한다(기본 +1).
       //
-      // 등급이 ★ 1단계뿐이라 [HeroRarity.isMax] 가 항상 true → 여기서 항상
-      // `maxed` 로 빠지고 아래 승급 블록은 도달하지 않는다. 2성 이상을 추가하면
-      // 이 블록이 그대로 살아난다.
-      final target = p.topGradeHero;
-      if (target == null) continue;
-      final before = p.heroGrade(target.heroId);
-      if (before.isMax) {
+      // 만렙이면 더 오를 수 없어 maxed 로 남긴다. 같은 heroId 가 10연에서
+      // 반복되면 매 반복마다 갱신된 p 의 현재 레벨을 기준으로 누적된다.
+      final before = p.heroGrade(hero.heroId);
+      final fromLevel = p.heroLevel(hero.heroId);
+      if (fromLevel >= HeroLevel.maxLevel) {
         results.add(
           GachaResult(
             hero: hero,
             outcome: GachaOutcome.maxed,
             gradeBefore: before,
             gradeAfter: before,
+            levelBefore: fromLevel,
+            levelAfter: fromLevel,
           ),
         );
         continue;
       }
-      final after = before.next;
-      p = p.copyWith(
-        heroGrades: {...p._heroGrades, target.heroId: after.index},
+      final granted = p.grantHeroLevel(
+        hero.heroId,
+        levels: HeroLevel.levelsPerDuplicate,
       );
+      p = granted.progress;
       results.add(
         GachaResult(
           hero: hero,
-          outcome: GachaOutcome.promoted,
+          outcome: GachaOutcome.levelUp,
           gradeBefore: before,
-          gradeAfter: after,
+          gradeAfter: before,
+          levelBefore: granted.fromLevel,
+          levelAfter: granted.toLevel,
         ),
       );
     }
@@ -673,6 +676,25 @@ class RuneProgress {
     return (
       progress: copyWith(heroLevels: levels, heroExp: exps),
       levelUps: ups,
+    );
+  }
+
+  /// [heroId] 영웅의 레벨을 [levels] 만큼 올린다 (중복 영입 보상). EXP 는 건드리지 않는다.
+  ///
+  /// 최대 [HeroLevel.maxLevel] 로 클램프한다. 만렙이라 오를 수 없으면 아무 변화 없이
+  /// 같은 진행도를 돌려준다(from == to). 반환된 from/to 는 결과 팝업의
+  /// `Lv.from → Lv.to` 표시에 쓴다.
+  ({RuneProgress progress, int fromLevel, int toLevel}) grantHeroLevel(
+    String heroId, {
+    int levels = 1,
+  }) {
+    final from = heroLevel(heroId);
+    final to = (from + levels).clamp(HeroLevel.minLevel, HeroLevel.maxLevel);
+    if (to <= from) return (progress: this, fromLevel: from, toLevel: from);
+    return (
+      progress: copyWith(heroLevels: {..._heroLevels, heroId: to}),
+      fromLevel: from,
+      toLevel: to,
     );
   }
 

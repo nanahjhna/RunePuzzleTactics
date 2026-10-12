@@ -9,8 +9,8 @@
 /// - 가용 풀은 `unlockStage <= nextStage` 인 영웅뿐이다. `HeroPool.unlockStages`
 ///   가 [1] 이라 시작부터 전원이 풀에 들어온다. 2성 이상을 추가하면 풀이
 ///   "하위 등급부터 접두 구간"이 되고, 확률은 **가용 등급에 정규화**한다.
-/// - 중복은 보유에 쌓이지 않고 즉시 강화 재료로 소진된다
-///   (흡수/승급 처리는 [RuneProgress.tryPullHeroes]).
+/// - 중복은 보유에 쌓이지 않고 그 영웅의 **기존 카드 레벨업**으로 소진된다
+///   (기본 +1 레벨, 만렙이면 무효 — [RuneProgress.tryPullHeroes]).
 library;
 
 import 'dart:math';
@@ -31,6 +31,11 @@ enum GachaOutcome {
 
   /// 중복이지만 이미 최고 등급이라 승급 없음.
   maxed,
+
+  /// 중복 → 뽑힌 영웅의 **기존 카드가 레벨업** (기본 +1 레벨).
+  ///
+  /// 만렙(Lv.30) 영웅은 더 오를 수 없어 [maxed] 로 남는다.
+  levelUp,
 }
 
 /// 1회 추첨 결과 (결과 팝업이 그대로 소비).
@@ -40,6 +45,8 @@ class GachaResult {
     required this.outcome,
     required this.gradeBefore,
     required this.gradeAfter,
+    this.levelBefore = 0,
+    this.levelAfter = 0,
   });
 
   final RuneHeroDef hero;
@@ -48,6 +55,10 @@ class GachaResult {
   /// 승급 전/후 등급 ([GachaOutcome.maxed] 이면 동일).
   final HeroRarity gradeBefore;
   final HeroRarity gradeAfter;
+
+  /// 레벨 변화 ([GachaOutcome.levelUp] 이면 before < after). 그 외엔 동일값.
+  final int levelBefore;
+  final int levelAfter;
 }
 
 /// 뽑기 카탈로그/추첨 엔진.
