@@ -368,6 +368,75 @@ class _AffinityChip extends StatelessWidget {
   }
 }
 
+/// 전투 중 스킬 설명 팝업 — 초상화 위 스킬 칩을 누르면 띄운다.
+///
+/// 이름/효과/사용 횟수를 한 화면에 압축한다. 전투에서 나가지 않고 스킬이
+/// 무엇을 하는지 확인할 수 있어야 "스킬을 모르고 넘어가는" 일이 없다.
+void _showSkillInfoDialog(
+  BuildContext context, {
+  required HeroSkillSpec spec,
+  required String heroId,
+  required RuneElement element,
+}) {
+  final l10n = LanguageScope.of(context).strings;
+  final color = heroElementColor(element);
+  final name = l10n.tr(spec.l10nKeyFor(heroId));
+  final desc = l10n.tr(spec.descriptionKeyFor(heroId));
+  showDialog<void>(
+    context: context,
+    builder: (_) => Dialog(
+      backgroundColor: AppColors.cardDark,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: color.withValues(alpha: 0.8), width: 1.5),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(element.emoji, style: const TextStyle(fontSize: 18)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    name,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              desc,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              l10n.tr('battle_skill_once'),
+              style: TextStyle(
+                color: color.withValues(alpha: 0.9),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 /// 전투 상단바: 중앙 제목 + 우측 일시정지 버튼.
 ///
 /// 좌측 48px 는 제거된 [X] 버튼 자리 — 중앙 제목이 화면 정중앙에 오도록 하는
@@ -597,7 +666,7 @@ class _UnitSlot extends StatelessWidget {
       // (캡션 → HP 바 → 초상화 순서로 통일.)
       return Column(
         children: [
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           const SizedBox(height: 4),
           const SizedBox(height: _UnitHpBar.height),
           const SizedBox(height: 4),
@@ -616,6 +685,9 @@ class _UnitSlot extends StatelessWidget {
     // 쓰러진 영웅은 HP 0 이고 스킬을 쓸 수 없다 — 초상화 자체가 ✕ 로 바뀐다.
     final down = u.isDown;
     final ready = active && canUseSkill && !used && !down && spec != null;
+    // 스킬명 칩 표시 여부 — 캡션이 "스킬 이름"을 보여주는 상태에서만 칩으로
+    // 그리고 탭(설명 팝업)을 허용한다. 조준/사용 완료/쓰러짐/무스킬은 평문.
+    final showSkillChip = spec != null && !armed && !used && !down;
     final color = heroElementColor(u.element);
     final l10n = LanguageScope.of(context).strings;
     final hero = HeroPool.byId(u.heroId);
@@ -638,31 +710,61 @@ class _UnitSlot extends StatelessWidget {
     return Column(
       children: [
         SizedBox(
-          height: 16,
-          child: FittedBox(
-            child: Text(
-              armed
-                  ? l10n.tr('battle_skill_aiming')
-                  : down
-                  ? l10n.tr('battle_hero_down')
-                  : used
-                  ? l10n.tr('battle_skill_used')
-                  : spec == null
-                  ? l10n.tr('hero_skill_none')
-                  : '${u.element.emoji} ${l10n.tr(spec.l10nKeyFor(u.heroId))}',
-              maxLines: 1,
-              style: TextStyle(
-                color: armed
-                    ? color
-                    : down
-                    ? AppColors.danger
-                    : ready
-                    ? AppColors.accentGold
-                    : Colors.white54,
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
+          height: 20,
+          child: Center(
+            // 스킬명 칩 — "스킬이 있다"는 인지 + 탭하면 설명 팝업. 포트레이트
+            // 탭(발동/조준)과 입력 영역이 분리되어 충돌하지 않는다.
+            child: showSkillChip
+                ? GestureDetector(
+                    onTap: () => _showSkillInfoDialog(
+                      context,
+                      spec: spec,
+                      heroId: u.heroId,
+                      element: u.element,
+                    ),
+                    child: UiPill(
+                      size: UiPillSize.medium,
+                      borderColor: color.withValues(alpha: 0.55),
+                      background: color.withValues(alpha: 0.14),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      child: Text(
+                        '${u.element.emoji} ${l10n.tr(spec.l10nKeyFor(u.heroId))}',
+                        maxLines: 1,
+                        style: TextStyle(
+                          color: ready ? AppColors.accentGold : Colors.white70,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  )
+                : FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      armed
+                          ? l10n.tr('battle_skill_aiming')
+                          : down
+                          ? l10n.tr('battle_hero_down')
+                          : used
+                          ? l10n.tr('battle_skill_used')
+                          : l10n.tr('battle_skill_none'),
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: armed
+                            ? color
+                            : down
+                            ? AppColors.danger
+                            : ready
+                            ? AppColors.accentGold
+                            : Colors.white54,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
           ),
         ),
         const SizedBox(height: 4),
