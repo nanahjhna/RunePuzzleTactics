@@ -1,0 +1,141 @@
+name: rune_puzzle_tactics
+description: "룬 퍼즐 타격 전술 RPG. 오프라인 우선 로그라이크 배틀 퍼즐 게임."
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+# The following defines the version and build number for your application.
+# A version number is three numbers separated by dots, like 1.2.43
+# followed by an optional build number separated by a +.
+# Both the version and the builder number may be overridden in flutter
+# build by specifying --build-name and --build-number, respectively.
+# In Android, build-name is used as versionName while build-number used as versionCode.
+# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
+# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
+# Read more about iOS versioning at
+# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
+# In Windows, build-name is used as the major, minor, and patch parts
+# of the product and file versions while build-number is used as the build suffix.
+version: 1.0.0+3
+
+environment:
+  sdk: ^3.12.2
+
+# Dependencies specify other packages that your package needs in order to work.
+# To automatically upgrade your package dependencies to the latest versions
+# consider running `flutter pub upgrade --major-versions`. Alternatively,
+# dependencies can be manually updated by changing the version numbers below to
+# the latest version available on pub.dev. To see which dependencies have newer
+# versions available, run `flutter pub outdated`.
+dependencies:
+  flutter:
+    sdk: flutter
+
+  shared_preferences: ^2.5.5
+  firebase_core: ^4.15.0
+  flame: ^1.38.2
+  firebase_analytics: ^12.6.0
+  firebase_crashlytics: ^5.4.0
+  sqflite: ^2.4.0
+  path_provider: ^2.1.0
+  path: ^1.9.1
+  google_mobile_ads: ^9.1.0
+  audioplayers: ^6.8.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+
+  # The "flutter_lints" package below contains a set of recommended lints to
+  # encourage good coding practices. The lint set provided by the package is
+  # activated in the `analysis_options.yaml` file located at the root of your
+  # package. See that file for information about deactivating specific lint
+  # rules and activating additional ones.
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:
+
+  # The following line ensures that the Material Icons font is
+  # included with your application, so that you can use the icons in
+  # the material Icons class.
+  uses-material-design: true
+
+  assets:
+    - assets/sounds/music/Moirai written by のる.mp3
+    - assets/sounds/Environment/SwitchButton1_On.wav
+    - assets/sounds/Equipment/MatchStrike1.wav
+    - assets/sounds/Combat/DesignedPunch1.wav
+    - assets/sounds/Combat/DesignedPunch2.wav
+    - assets/sounds/Equipment/MatchStrike2.wav
+    - assets/sounds/Environment/WaterSplash1.wav
+    - assets/sounds/Destruction/WoodSnap1.wav
+    # 영웅 영입(뽑기) 연출용 효과음 (요구사항 9). 번들에 카지노/마법 차임이
+    # 없어서 기존 팩에서 역할이 가장 가까운 것을 골랐다. 나중에 전용 사운드로
+    # 교체하려면 lib/services/game_audio_service.dart 의 effectAssets 한 곳만
+    # 고치면 된다.
+    - assets/sounds/Environment/SwitchButton2_On.wav
+    - assets/sounds/Combat/DesignedPunch4.wav
+    - assets/sounds/Food/SmallGlassBottles1.wav
+    - assets/sounds/Tools/Hammer3.wav
+    # UI_Flat 에셋 — 코드에서 참조하는 7장만 개별 지정.
+    # 폴더 단위 선언은 미참조 파일도 번들에 포함시켜 크기만 키웠다.
+    - assets/UI/UI_Flat_Banner01a.png
+    - assets/UI/UI_Flat_Button02a_1.png
+    - assets/UI/UI_Flat_Button02a_3.png
+    - assets/UI/nav_home.png
+    - assets/UI/nav_character.png
+    - assets/UI/nav_shop.png
+    - assets/UI/nav_settings.png
+    # 9-slice 크롬 스프라이트 **교체용 자리**. 지금 들어 있는 건 규격 확인용 더미
+    # (흰색 테두리 + 투명 중앙)이고, 나중에 실이미지로 덮어쓴다.
+    # 경로는 lib/theme/ui_sprites.dart 한 곳에 모아뒀다 — 교체 시 거기만 고친다.
+    - assets/ui_dummy/
+    - assets/icon/
+    - assets/background/
+    - assets/sprites/monster/slime/idle/
+    - assets/sprites/monster/slime/attack/
+    - assets/sprites/monster/slime/damage/
+    - assets/sprites/monster/slime/death/
+    - assets/images/runes/
+    # 영웅 초상화 (속성 단위 공유, 20명 전원이 각 속성 이미지를 쓴다).
+    # 원본(hero_<color>_1.png)은 마스터라 번들에 넣지 않고, 파생 파일만 명시한다.
+    #   *_face.png — 256x256 정사각형 얼굴 크롭 (정사각형 슬롯용)
+    #   *_full.png — 409x610 전신 (전투 HUD 세로 슬롯용)
+    #   *_damage_full.png — 408x612 피격 연출용 전신 (피격 순간 평상시 초상화
+    #     위에 순간적으로 겹친다. *_full.png 와 규격이 같아 프레이밍이 안 어긋남)
+    - assets/images/hero/fire_face.png
+    - assets/images/hero/fire_full.png
+    - assets/images/hero/fire_damage_full.png
+    - assets/images/hero/grass_face.png
+    - assets/images/hero/grass_full.png
+    - assets/images/hero/grass_damage_full.png
+    - assets/images/hero/water_face.png
+    - assets/images/hero/water_full.png
+    - assets/images/hero/water_damage_full.png
+    - assets/images/hero/light_face.png
+    - assets/images/hero/light_full.png
+    - assets/images/hero/light_damage_full.png
+    - assets/images/hero/poison_face.png
+    - assets/images/hero/poison_full.png
+    - assets/images/hero/poison_damage_full.png
+    - assets/images/card/card_red.jpg
+    - assets/images/card/card_blue.jpg
+    - assets/images/card/card_green.jpg
+    - assets/images/card/card_yellow.jpg
+    - assets/images/card/card_puple.jpg
+    # 영웅 영입(뽑기) 연출용 프레임 시퀀스 (요구사항 9).
+    # assets/effects/ 전체는 5543장이라 번들하기엔 크다. 아래 2개 폴더(약 35KB)
+    # 만 올려 `SpriteEffect` 가 재생한다. 경로에 공백이 있어도 문자열로 정상
+    # 등록된다.
+    - "assets/effects/Magic Bursts/round_sparkle_burst_003/round_sparkle_burst_003_large_red/"
+    - "assets/effects/Magic Bursts/round_firework_burst_002/round_firework_burst_002_large_yellow/"
+
+flutter_launcher_icons:
+  image_path: "assets/icon/icon.png" # 또는 실제 아이콘 이미지 파일 경로
+  android: true
+  ios: true

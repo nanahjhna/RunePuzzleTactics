@@ -50,6 +50,9 @@ class RuneMeta {
   static const int rewardedAdPlay = 10;
   static const int rewardedAdHero = 10;
 
+  /// 첫 패배 동료 영입 가이드 지원금: Hero Currency 1연차 1회분.
+  static const int firstDefeatGuideGift = HeroGacha.singleCost;
+
   /// 기초 파티 스탯은 영웅 및 영구 강화 스탯에 별도로 더하지 않는다.
   static const int baseAttack = 0;
 
@@ -106,6 +109,7 @@ class RuneProgress {
     this.lastPlayedStage,
     this.lastStageVictory,
     this.heroPityCount = 0,
+    this.firstDefeatGuideStep = 0,
     Set<String>? heroOwned,
     List<String>? heroParty,
     Map<String, int>? heroGrades,
@@ -177,6 +181,15 @@ class RuneProgress {
 
   /// 천상 확정까지 필요한 연속 중복 횟수.
   static const int heroPityThreshold = 10;
+
+  /// 첫 패배 동료 영입 가이드 진행 단계.
+  ///
+  /// - 0 = 미시작 (기본).
+  /// - 1 = 지원금 지급됨 · 동료 영입 진행중 (상점 하이라이트 유지).
+  /// - 2 = 완료 (뽑기까지 마침).
+  ///
+  /// 첫 패배에서 딱 1회 발동하며, 이후 재패배에는 뜨지 않는다.
+  final int firstDefeatGuideStep;
 
   /// 천상 발동 조건 — [heroPityCount] 가 임계값 이상이고 아직 미보유 영웅이 있다.
   bool get pityReady {
@@ -613,11 +626,8 @@ class RuneProgress {
   // ── 영웅 레벨 / 경험치 ──
 
   /// [heroId] 영웅의 현재 레벨 ([HeroLevel.minLevel] ~ [HeroLevel.maxLevel]).
-  int heroLevel(String heroId) =>
-      (_heroLevels[heroId] ?? HeroLevel.minLevel).clamp(
-        HeroLevel.minLevel,
-        HeroLevel.maxLevel,
-      );
+  int heroLevel(String heroId) => (_heroLevels[heroId] ?? HeroLevel.minLevel)
+      .clamp(HeroLevel.minLevel, HeroLevel.maxLevel);
 
   /// [heroId] 영웅의 현재 EXP (다음 레벨까지의 진행분). 만렙이면 0.
   int heroExp(String heroId) {
@@ -650,7 +660,9 @@ class RuneProgress {
   /// - 한 번에 여러 레벨이 오를 수 있다(연속 루프).
   ///
   /// 결과 화면의 "레벨 업" 알림은 [levelUps] 를 그대로 쓴다. 진행도는 [progress].
-  ({RuneProgress progress, List<HeroLevelUp> levelUps}) grantPartyExp(int amount) {
+  ({RuneProgress progress, List<HeroLevelUp> levelUps}) grantPartyExp(
+    int amount,
+  ) {
     if (amount <= 0 || _heroParty.isEmpty) {
       return (progress: this, levelUps: const <HeroLevelUp>[]);
     }
@@ -855,6 +867,26 @@ class RuneProgress {
   /// 튜토리얼 완료/스킵 기록 (RPT-406).
   RuneProgress recordTutorialDone() => copyWith(tutorialCompleted: true);
 
+  // ── 첫 패배 동료 영입 가이드 ──
+
+  /// 첫 패배 가이드 단계를 갱신한다 (0~2로 클램핑).
+  RuneProgress withFirstDefeatGuideStep(int step) =>
+      copyWith(firstDefeatGuideStep: step.clamp(0, 2));
+
+  /// 첫 패배 가이드 지원금(Hero Currency)을 지급한다.
+  ///
+  /// 멱등: 같은 txId(`first_defeat_guide_gift`)는 원장이 중복 지급을 막는다.
+  RuneProgress grantFirstDefeatGuideGift() {
+    final r = applyCurrency(
+      txId: 'first_defeat_guide_gift',
+      type: CurrencyType.hero,
+      amount: RuneMeta.firstDefeatGuideGift,
+      txType: CurrencyTxType.guideGift,
+      source: 'guide',
+    );
+    return r.progress;
+  }
+
   // ── 일일 보상 / 광고 (멱등) ──
 
   /// 일일 보상 수령 가능 여부 (오늘 미수령).
@@ -943,6 +975,7 @@ class RuneProgress {
     int wins = 0,
     int losses = 0,
     bool tutorialCompleted = false,
+    int firstDefeatGuideStep = 0,
     String? lastDailyRewardDate,
     Map<String, Map<HeroStatKind, int>>? heroStatLevels,
     Map<String, int>? heroGrades,
@@ -961,6 +994,7 @@ class RuneProgress {
       wins: wins,
       losses: losses,
       tutorialCompleted: tutorialCompleted,
+      firstDefeatGuideStep: firstDefeatGuideStep,
       lastDailyRewardDate: lastDailyRewardDate,
       heroOwned: owned,
       heroParty: party,
@@ -981,6 +1015,7 @@ class RuneProgress {
     int? wins,
     int? losses,
     bool? tutorialCompleted,
+    int? firstDefeatGuideStep,
     String? lastDailyRewardDate,
     int? lastPlayedStage,
     bool? lastStageVictory,
@@ -1001,6 +1036,7 @@ class RuneProgress {
       wins: wins ?? this.wins,
       losses: losses ?? this.losses,
       tutorialCompleted: tutorialCompleted ?? this.tutorialCompleted,
+      firstDefeatGuideStep: firstDefeatGuideStep ?? this.firstDefeatGuideStep,
       lastDailyRewardDate: lastDailyRewardDate ?? this.lastDailyRewardDate,
       lastPlayedStage: lastPlayedStage ?? this.lastPlayedStage,
       lastStageVictory: lastStageVictory ?? this.lastStageVictory,
@@ -1034,6 +1070,8 @@ class RuneProgress {
       'lastPlayedStage': lastPlayedStage,
       'lastStageVictory': lastStageVictory,
       'heroPityCount': heroPityCount,
+      // 첫 패배 동료 영입 가이드 진행 단계 (0~2). 구버전 세이브 키 부재 → 0.
+      'firstDefeatGuideStep': firstDefeatGuideStep,
       'heroOwned': _heroOwned.toList(),
       'heroParty': _heroParty,
       // 등급은 영웅 id → HeroRarity 인덱스. 없는 영웅은 초기 등급(영입 순서)이다.
@@ -1090,6 +1128,7 @@ class RuneProgress {
       lastPlayedStage: _decodeStage(json['lastPlayedStage']),
       lastStageVictory: json['lastStageVictory'] as bool?,
       heroPityCount: _decodePity(json['heroPityCount']),
+      firstDefeatGuideStep: _decodeGuideStep(json['firstDefeatGuideStep']),
       heroOwned: owned.toSet(),
       heroParty: party,
       heroGrades: _decodeHeroGrades(json['heroGrades']),
@@ -1248,6 +1287,13 @@ class RuneProgress {
   static int _decodePity(dynamic raw) {
     final v = (raw as num?)?.toInt() ?? 0;
     return v.clamp(0, heroPityThreshold);
+  }
+
+  /// `firstDefeatGuideStep` 역직렬화. 0~2 밖의 값은 클램핑한다.
+  /// 구버전 세이브에는 키가 없으므로 0(미시작)으로 폴백한다.
+  static int _decodeGuideStep(dynamic raw) {
+    final v = (raw as num?)?.toInt() ?? 0;
+    return v.clamp(0, 2);
   }
 
   static List<CurrencyTransaction> _decodeLedger(dynamic raw) {

@@ -350,11 +350,17 @@ class _RuneMainScreenState extends State<RuneMainScreen> {
                           onStartBattle: (stage) => _startBattle(stage),
                           onChanged: _onProgressChanged,
                         ),
-                        RunePartyTab(progress: p, onChanged: _onProgressChanged),
+                        RunePartyTab(
+                          progress: p,
+                          onChanged: _onProgressChanged,
+                        ),
                         RuneShopTab(
                           progress: p,
                           onChanged: _onProgressChanged,
                           analytics: _analytics,
+                          // 첫 패배 가이드 진행중이면 상점 뽑기 안내를 노출한다.
+                          guideActive: p.firstDefeatGuideStep == 1,
+                          onGuideFinished: () => setState(() => _index = 0),
                         ),
                         RuneSettingsTab(
                           onReplayTutorial: _openTutorial,

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "487429883157",
+    "project_id": "runepuzzle-tactics",
+    "storage_bucket": "runepuzzle-tactics.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:487429883157:android:188b2d36d76b46ab0bd51c",
+        "android_client_info": {
+          "package_name": "com.han.RunePuzzleTactics"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAtJlrfIVUVCrlgBXJnWB7KaLIbQKU4Pnk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

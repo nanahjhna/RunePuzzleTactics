@@ -1,0 +1,158 @@
+================================================================================
+ 룬 퍼즐 택틱스(Rune Puzzle Tactics) — 키워드 → 수정 위치 가이드
+================================================================================
+"이걸 고치고 싶다" → 키워드를 찾아서 "이 파일의 이 부분"을 고치면 됩니다.
+(경로는 모두 프로젝트 루트 기준: C:\Users\nanah\StudioProjects\RunePuzzleTactics)
+
+--------------------------------------------------------------------------------
+[0] 시작 전 공통 규칙 (절대 기억할 것)
+--------------------------------------------------------------------------------
+1. 엔진 로직(수치·턴·퍼즐)은 lib/game/rune/ 아래 "순수 Dart" 파일에만 둔다.
+   화면(Flutter/Flame)에는 UI/연출만 넣는다.
+2. 새 엔진 파일을 만들면 반드시 lib/game/rune.dart(barrel)에 export 추가.
+3. ValueKey / 콜백 이름 / 라우트 경로 / l10n 키는 함부로 바꾸지 않는다.
+   (테스트와 다른 화면이 의존함. 예: 'stage-prep-dialog', 'timer_seconds' 등)
+4. l10n(번역) 문구를 추가할 때는 en/ko/ja 3개 언어 키를 반드시 세트로.
+5. 수정 후: flutter analyze → flutter test → flutter build apk --debug.
+   (기존 테스트를 고치지 말 것. 14개 기존 실패는 별도 작업임)
+6. 리드미/문서/버튼 레이아웃 참고: .opencode\plan\button_layout_reference.txt
+
+--------------------------------------------------------------------------------
+[1] 빠른 키워드 → 파일 (주요 30개)
+--------------------------------------------------------------------------------
+ 키워드                          | 가면 되는 파일
+---------------------------------+----------------------------------------------
+ 타이머 / 10초 / 턴 시간         | lib\game\rune\battle_engine.dart
+                                  lib\game\rune\stage.dart (playerActionTime)
+ 타이머 바 / 남은 시간 UI        | lib\screens\rune\rune_battle_view.dart (~815행)
+ 턴 넘김 / 몬스터 턴 / timeout   | lib\game\rune\battle_engine.dart
+ 몬스터 턴 연출(0.8초 애니)      | lib\screens\rune\rune_battle_game.dart
+                                  lib\widgets\monster_sprite.dart
+ 매 프레임 tick / 전투 루프      | lib\screens\rune\rune_battle_game.dart (_tickBattle)
+ 파티 HP 감소 / 승리 / 패배      | lib\game\rune\battle_engine.dart
+ Ready...GO! / 전투 진입 카운트  | lib\screens\rune\rune_battle_view.dart
+ 퍼즐 / 매칭 / 콤보             | lib\game\rune\puzzle_engine.dart
+ 보드 배치 / 셀 / 6x6           | lib\game\rune\puzzle_board.dart
+ 데미지 / 피해량 공식           | lib\game\rune\damage.dart
+ 영웅 / 파티 / 스탯/공격력      | lib\game\rune\hero_roster.dart, hero_pool.dart
+ 속성 / 상성                    | lib\game\rune\rune_element.dart
+ 강화 / 업그레이드              | lib\game\rune\upgrade.dart
+ 재화 / 플레이 / 코인 / 입장비용 | lib\game\rune\currency.dart
+ 진행 저장 / nextStage / 해금    | lib\game\rune\rune_progress.dart
+ 스테이지 번호 / 스테이지 보상   | lib\game\rune\stage.dart
+ BattlePhase 추가/제거           | lib\game\rune\battle_state.dart
+ 튜토리얼 절차 / 힌트 문구       | lib\game\rune\tutorial.dart
+ 로비 / 허브 / 전투 시작 버튼    | lib\screens\rune\rune_main_screen.dart
+ 하단 탭(로비/파티/상점/설정)    | lib\screens\rune\rune_lobby_tab.dart
+                                  lib\screens\rune\rune_party_tab.dart
+                                  lib\screens\rune\rune_shop_tab.dart
+                                  lib\screens\rune\rune_settings_tab.dart
+ 출전 확인 / 스테이지 준비 시트  | lib\screens\rune\stage_prep_dialog.dart
+ 결과 화면 / 클리어 보상         | lib\screens\rune\rune_result_screen.dart
+ 전투 HUD / 몬스터 HP바 / 울트라 | lib\screens\rune\rune_battle_view.dart
+ 룬 보드 터치 / 입력 잠금        | lib\screens\rune\rune_battle_game.dart (isIdle)
+ 궁극기 / Ultimate 게이지        | lib\screens\rune\rune_battle_game.dart (~412행)
+ 검은 화면(로비 복귀 시)         | lib\screens\rune\rune_main_screen.dart (goToShop)
+                                  lib\widgets\glass_surface.dart (blur 0)
+                                  lib\main.dart (FlutterError.onError)
+ 배너 광고 / 구글 애드몹         | lib\screens\rune\rune_main_screen.dart (~360행)
+                                  lib\widgets\ad_banner_widget.dart
+ 보상 광고 / 리워드              | lib\widgets\rewarded_ad_helper.dart
+                                  lib\widgets\rewarded_ad_button.dart
+ 플레이 재화 부족 팝업           | lib\widgets\play_shortage_dialog.dart
+ 유리 카드 / BackdropFilter       | lib\widgets\glass_surface.dart
+ 그라디언트 버튼 / CTA           | lib\widgets\gradient_button.dart
+ 바텀시트                       | lib\widgets\glass_bottom_sheet.dart
+ 몬스터 스프라이트/공격 모션     | lib\widgets\monster_sprite.dart
+ 색상 / 다크 테마 / 토큰         | lib\theme\app_theme.dart
+ 번역/문구 (한/영/일)            | lib\l10n\app_strings.dart
+ 언어 설정 / 언어 다이얼로그      | lib\l10n\language_controller.dart
+                                  lib\l10n\language_dialog.dart
+ 저장(세이브) / 로드 / SQLite     | lib\services\rune_progress_store.dart
+                                  lib\services\sqlite_rune_progress_store.dart
+ 분석 / 로그 / GA4                | lib\services\rune_analytics.dart
+ 앱 시작 / 에러 화면 표시         | lib\main.dart
+ 새 엔진 파일 추가 시            | lib\game\rune.dart (export 추가!)
+
+--------------------------------------------------------------------------------
+[2] 핵심 파일 상세 — 여기까지만 보면 대부분 됨
+--------------------------------------------------------------------------------
+■ lib\game\rune\battle_engine.dart  ← "턴/타이머" 전부 여기
+  - _deadline (71행): 현재 턴의 종료 시각.  null = 타이머 없음.
+  - _startPlayerTurn() (117행): 턴 시작 → phase=plan, 입력 해제,
+                               _deadline = now + playerActionTime (10초 자동 가동).
+  - startPlayerTurn() (128행): 공개 래퍼. Flame이 몬스터 연출(0.8초) 끝나고 호출.
+  - onFirstTouch() (~132~137행): PLAN→ACTION 전환만. 타이머는 위에서 이미 가동.
+  - tick() (169행): 매 프레임 호출. deadline 지나면 timeout 처리(timeout phase).
+  - 몬스터 턴 처리 (~360~396행): 파티 HP 감소는 즉시 적용(동기), phase는
+    plan으로 끝나고 deadline은 null → Flame이 새 턴을 시작시킴.
+  - 파티 HP <= 0 → phase = defeat (358행 부근).
+
+■ lib\game\rune\stage.dart
+  - StageConfig.playerActionTime (32행): "10초"를 바꾸고 싶으면 이 값.
+  - actionTimeFor(stageNumber) (104행): 스테이지별 시간 계산.
+
+■ lib\game\rune\battle_state.dart
+  - enum BattlePhase (9행): plan/action/inputResolving/.../timeout/monsterTurn 추가 제거.
+  - class BattleState (23행): 파티 HP, 울트라 게이지 등 상태 필드.
+
+■ lib\screens\rune\rune_battle_game.dart  ← "Flame 전투 루프/연출"
+  - _monsterTurnDuration = 0.8 (78행): 몬스터 공격 연출 길이.
+  - _tickBattle() (191행): 매 프레임 battleEngine.tick() 호출(요구사항).
+  - _advanceMonsterTurn(dt) (225행): 연출 중 phase=monsterTurn 표시, 끝나면
+    battle.startPlayerTurn() (240행).
+  - isIdle (81행): !_monsterAnimating 포함. "입력 가능한지" 판정.
+  - 궁극기/입력 처리 (~399~427행).
+
+■ lib\screens\rune\rune_battle_view.dart  ← "전투 HUD"
+  - _onHud (352행), needsRefresh (359행): phase==plan 포함 → 카운트다운 실시간 갱신.
+  - _startReadyCountdown (340행), _buildReadyOverlay (1101행): Ready...GO!
+  - 타이머 바 전체 폭 UI (815~940행): 남은 시간 숫자 + 색상 진행 바.
+  - _timerLevel (1267행): 남은 시간 3초 이하 빨강 등 색 규칙.
+
+■ lib\screens\rune\rune_main_screen.dart  ← "허브(로비)"
+  - _startBattle (115행): 출전 확인 → 플레이 소모 → 배틀 라우팅.
+  - goToShop (163~175행): 결과에서 상점 이동 시 popUntil (검은 화면 수정 핵심).
+  - AdBannerWidget (360행): 배너 광고는 BackdropFilter 밖에 배치.
+
+■ lib\widgets\glass_surface.dart
+  - blur <= 0 이면 BackdropFilter 생략 (검은 화면 수정의 핵심).
+■ lib\widgets\monster_sprite.dart
+  - phase == monsterTurn 일 때 공격 모션 재생 (Flame 0.8초 연출 때 관측됨).
+■ lib\theme\app_theme.dart
+  - 색 토큰: 배경 0xFF12131C, 유리 0x26FFFFFF, 골드 0xFFFFB300,
+    CTA 그라디언트 [0xFFFF7E5F, 0xFFFF2525], radius 16/24/50.
+■ lib\main.dart
+  - FlutterError.onError (debug 전용 에러 표시 → 검은 화면 디버깅에 사용).
+■ lib\l10n\app_strings.dart
+  - 모든 문구. 키 추가 시 en/ko/ja 반드시 3개 세트.
+
+--------------------------------------------------------------------------------
+[3] 테스트 매핑 — "어느 테스트가 깨졌는지" 보고 고칠 파일 찾기
+--------------------------------------------------------------------------------
+ test\rune\battle_engine_test.dart       → 턴/타이머 엔진
+ test\rune\puzzle_engine_test.dart       → 매칭/콤보
+ test\rune\damage_test.dart              → 데미지 공식
+ test\rune\stage_test.dart               → 스테이지/시간
+ test\rune\rune_battle_view_test.dart    → 전투 HUD 위젯
+ test\rune\rune_battle_persistence_test.dart → 저장 복원 (기존 실패 3건)
+ test\widgets\monster_sprite_test.dart   → 몬스터 애니 (기존 실패 1건)
+ test\rune\black_test.dart / rune_lobby_view_test.dart → 허브/검은화면
+ test\l10n\app_strings_test.dart         → 3개 언어 키 일치(parity)
+ test\rune\tutorial_test.dart            → 튜토리얼 절차
+
+ (참고: 현재 베이스라인은 전체 +123 −14. 실패 14건 = battle_view 10 +
+  persistence 3 + monster_sprite 1. 이 14건은 별도 작업으로 빼둔 상태.)
+
+--------------------------------------------------------------------------------
+[4] 자주 하는 작업 예시 (복붙용 절차)
+--------------------------------------------------------------------------------
+A. "10초를 8초로 바꾸기"        → stage.dart의 playerActionTime 값 변경.
+B. "몬스터 공격 연출 1.2초로"   → rune_battle_game.dart 78행의 0.8 → 1.2.
+C. "버튼 문구 바꾸기"           → app_strings.dart 해당 키 값 변경 (3개 언어).
+D. "몬스터 공격력 올리기"       → battle_engine.dart 몬스터 턴 데미지 부분
+                                  (또는 damage.dart 공식).
+E. "새 phase 추가하기"          → battle_state.dart enum + battle_engine.dart
+                                  전이 처리 + (화면 연출이면) rune_battle_game.dart.
+F. "HUD에 뭔가 추가하기"        → rune_battle_view.dart의 Column/Row 영역.
+================================================================================

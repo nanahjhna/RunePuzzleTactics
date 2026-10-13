@@ -1,0 +1,62 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# VS Code related (필요에 따라 주석 해제하여 사용 가능)
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio / Gradle build artifacts
+/android/app/debug
+/android/app/profile
+/android/app/release
+/android/.gradle/
+/android/local.properties
+/android/captures/
+.gradle/ 
+# App Signing Security 
+*.jks 
+*.keystore 
+key.properties 
+upload_certificate.pem 
+
+# Visual Studio / IDE workspaces
+.vs/
+
+# Android build outputs (project root only)
+/android/build/
+
+# Local agent scratch files (API 키 노출 방지)
+fix_agent.py
+recreation_prompt.txt 

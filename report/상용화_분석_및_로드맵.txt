@@ -1,0 +1,83 @@
+# Rune Puzzle Tactics 상용화 분석 및 로드맵
+
+이 문서는 게임 상용화를 위해 현재 구현된 상태를 점검하고, 부족한 요소(에셋, 코드, 비즈니스 로직 등)를 분석하여 구체적인 TODO 계획과 필요한 에셋 리스트를 정리한 파일입니다.
+
+---
+
+## 1. 현재 구현 상태 요약 (Current State)
+
+### 주요 변경 완료 사항
+- **영웅 등급 단일화**: 5명(속성당 1명) 영웅 모두 ★1단계 `R` 등급으로 통합 완료.
+- **속성 시스템 개편**: 몬스터는 모두 무속성(`monsterElement = null`), 영웅 속성과 매칭 룬 간의 "시너지 배율(Rune Synergy)"로만 속성 피해를 계산.
+- **영웅 교체 UI 단순화**: 자물쇠 슬롯(🔒) 대신 공유 가능한 `+` 버튼 슬롯(`PartySlots`)으로 변경. 탭 시 BottomSheet 영웅 선택창(`showHeroPickerSheet`)이 호출되어 로비, 파티 탭, 스테이지 준비 모달에서 공용으로 사용.
+- **번개 속성명 변경**: 기존 Yellow 속성이 Lightning(번개)으로 변경됨 (코드 내부 식별자는 `light` 유지).
+- **몬스터 다변화 (텍스트)**: 별도의 에셋 추가 없이 스테이지 번호 기반 결정론적 알고리즘으로 이름(Cave Slime, Stone Maw, Ancient Guardian, Void Spawn)과 등급 접두사(Elite, Elder)를 표시하도록 수정.
+- **공용 위젯 분리**: `party_slots.dart` 및 `party_editor.dart`로 로직 공유화 완료.
+
+---
+
+## 2. 상용화 관점에서의 결함 및 부족한 요소 (Gap Analysis)
+
+### A. 에셋 부족 문제 (Asset Shortage)
+현재 프로젝트 내 `assets/` 디렉토리에는 약 5,500개 이상의 이펙트 프레임 파일과 165개의 사운드 파일이 존재하지만, **코드에서 실제로 사용 중인 에셋은 극소수**입니다.
+1. **몬스터 에셋 부족**:
+   - 현재 구현된 몬스터 애니메이션은 오직 슬라임(`assets/sprites/monster/slime/`) 뿐입니다.
+   - 이름은 'Ancient Guardian' 등으로 다양하게 바뀌지만 비주얼은 모두 녹색 슬라임 하나로 고정되어 있어 상용화 시 시각적 몰입감이 크게 떨어집니다.
+2. **이펙트 에셋 미활용**:
+   - `assets/effects/` 하위에 방대한 이팩트 스프라이트 시트(스펠, 타격, 폭발 등)가 있지만 퍼즐 매칭이나 보스 공격 시 거의 연출되지 않고 있습니다.
+3. **사운드 에셋 미등록**:
+   - 사운드 파일은 165개가 존재하지만 `GameAudioService.effectAssets`에 등록되어 재생되는 효과음은 단 13개에 불과합니다.
+
+### B. 비즈니스 로직 및 BM 부족
+1. **광고(AdMob) 설정**:
+   - 배너 광고 및 보상형 광고의 ID가 구글 테스트 ID(`ca-app-pub-3940256099942544/...`)로 하드코딩되어 있습니다. 상용화를 위해서는 실제 AdMob 콘솔의 광고 단위 ID로 교체되어야 합니다.
+2. **진행도 저장소 검증**:
+   - SQLite 기반의 진행도 저장(`SqliteRuneProgressStore`) 기능이 구현되어 있으나 디바이스 환경에서의 데이터 마이그레이션이나 저장 안정성이 완벽히 검증되지 않았습니다.
+3. **가챠 및 영웅 영입 밸런스**:
+   - 영웅 획득 재화 밸런스와 광고 시청 보상 밸런스가 완전한 플레이 테스트를 거치지 않아 경제 시스템이 붕괴될 위험이 있습니다.
+
+---
+
+## 3. 상용화 준비를 위한 구체적인 TODO 리스트
+
+### [TODO 1] 빌드 및 분석 검증 (Compile & Analyze)
+- [ ] `flutter analyze` 실행을 통해 코드 내 잔여 에러 및 경고 수정.
+- [ ] `flutter test`를 통해 속성 및 시너지 개편에 따른 데미지 공식 검증.
+- [ ] `flutter build apk --release`를 통한 릴리즈 빌드 호환성 검증.
+
+### [TODO 2] 몬스터 및 비주얼 다변화 (Visual Expansion)
+- [ ] 슬라임 이외의 추가 몬스터 스프라이트 리소스 도입 (예: 스톤 골렘, 가디언 픽셀 스프라이트).
+- [ ] `MonsterSprite` 위젯에서 스테이지 이름에 맞게 폴더 경로를 `slime`, `golem`, `guardian` 등으로 분기 처리하여 실제 다른 몬스터가 렌더링되도록 수정.
+- [ ] 퍼즐 매칭 및 스킬 사용 시 `assets/effects/` 내 폭발/치료/스펠 이펙트 프레임을 화면에 오버레이 연출하는 이펙트 렌더러 구현.
+
+### [TODO 3] 미사용 사운드 에셋 등록 및 연출 강화 (Audio Mapping)
+- [ ] `GameAudioService`에 매칭 성공, 스킬 발동, 콤보 누적 단계별로 사운드 매핑 추가.
+  - 예: 번개 속성 매칭 시 `Equipment/MatchStrike3.wav` 재생.
+  - 가챠 뽑기 성공 시 `Environment/GateWoodChain1.wav` 또는 폭발음 연출.
+
+### [TODO 4] 광고(AdMob) 및 인앱 결제 프로덕션 전환 (Monetization Setup)
+- [ ] `android/app/build.gradle.kts` 및 `AndroidManifest.xml`에 실제 구글 AdMob 앱 ID 반영.
+- [ ] `ad_banner_widget.dart` 및 `rewarded_ad_helper.dart`에 테스트 ID 대신 프로덕션 광고 단위 ID를 적용할 수 있도록 환경 변수(`--dart-define`) 지원 추가.
+- [ ] 결제 유도 혹은 추가 보상을 위한 인앱 광고 배치 지점 추가 설계 (예: 스테이지 클리어 후 보상 2배 광고).
+
+### [TODO 5] 다국어(l10n) 텍스트 최종 싱크 검증
+- [ ] `app_strings.dart` 내의 287개 다국어 키가 en/ko/ja 간 누락되거나 다른 부분이 없는지 무결성 검사 자동화 테스트 확인.
+
+---
+
+## 4. 필요한 추가 에셋 체크리스트 (Required Assets)
+
+### 몬스터 스프라이트 (필수)
+- [ ] **Stone Maw**: 대기(idle), 공격(attack), 피격(damage), 사망(death) 각 10프레임 (총 40장)
+- [ ] **Ancient Guardian**: 대기, 공격, 피격, 사망 각 10프레임 (총 40장)
+- [ ] **Void Spawn**: 대기, 공격, 피격, 사망 각 10프레임 (총 40장)
+
+### UI 및 연출 에셋 (권장)
+- [ ] **체력 바 및 보스 전용 HUD 프레임**: 보스 스테이지의 압도감을 줄 수 있는 화려한 메탈/다크 테마의 프레임 스프라이트.
+- [ ] **속성 매칭 전용 이펙트**: 각 속성(불, 물, 번개, 풀, 독)이 매칭될 때 보드 위에서 터지는 픽셀 파티클 이미지.
+
+---
+
+## 5. 보안 가이드 준수 (Security Reminder)
+- 릴리즈 빌드 서명 키(`key.properties`, `upload-key.jks`)는 절대로 public Git 저장소에 커밋되지 않도록 `.gitignore` 상태를 철저히 유지하십시오.
+- Firebase `google-services.json`은 공개되어도 안전한 파일이나, Google Cloud Console에서 API 키에 대한 사용 제한(HTTP 리퍼러, 안드로이드 패키지 명 제한)을 걸어두는 프로덕션 보안 작업을 상용화 전에 필히 완료해야 합니다.

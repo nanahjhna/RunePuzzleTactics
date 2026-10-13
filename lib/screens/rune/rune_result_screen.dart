@@ -19,6 +19,7 @@ import '../../theme/ui_sprites.dart';
 import '../../widgets/card_art.dart';
 import '../../widgets/glass_surface.dart';
 import '../../widgets/gradient_button.dart';
+import '../../widgets/guide_dialog.dart';
 import '../../widgets/hero_portrait.dart';
 import '../../widgets/play_shortage_dialog.dart';
 import '../../widgets/rewarded_ad_helper.dart';
@@ -45,6 +46,7 @@ class RuneResultScreen extends StatelessWidget {
     this.playCurrency,
     this.onRewardAdPlay,
     this.onShopRequested,
+    this.showFirstDefeatGuide = false,
   });
 
   final bool win;
@@ -77,6 +79,10 @@ class RuneResultScreen extends StatelessWidget {
   /// 콜백(라우터 플래그, 요구사항 6.4). null이면 예전처럼 값 전달 pop으로 폴백.
   final VoidCallback? onShopRequested;
 
+  /// 첫 패배 동료 영입 가이드: 진입 시 안내자 대사창을 1회 띄우고,
+  /// [동료 영입하러 가기] CTA로 상점 탭에 진입시킨다.
+  final bool showFirstDefeatGuide;
+
   @override
   Widget build(BuildContext context) {
     final l10n = LanguageScope.of(context).strings;
@@ -102,249 +108,263 @@ class RuneResultScreen extends StatelessWidget {
         if (didPop) return;
         _exitToHub(context, 'lobby');
       },
-      child: Scaffold(
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0xFF1E2130), AppColors.bgMain, Color(0xFF0B0C12)],
+      child: _FirstDefeatGuide(
+        enabled: showFirstDefeatGuide,
+        onGoShop: () => _exitToHub(context, 'shop'),
+        child: Scaffold(
+          body: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFF1E2130),
+                  AppColors.bgMain,
+                  Color(0xFF0B0C12),
+                ],
+              ),
             ),
-          ),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const SizedBox(height: 12),
-                          // 승/패 타이틀: 네온 그라데이션 텍스트 (규칙 1)
-                          ShaderMask(
-                            shaderCallback: (bounds) => LinearGradient(
-                              colors: win
-                                  ? [
-                                      const Color(0xFFFFD97A),
-                                      AppColors.accentGold,
-                                      AppColors.ctaGradStart,
-                                    ]
-                                  : [AppColors.danger, const Color(0xFFB71C1C)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ).createShader(bounds),
-                            child: Text(
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const SizedBox(height: 12),
+                            // 승/패 타이틀: 네온 그라데이션 텍스트 (규칙 1)
+                            ShaderMask(
+                              shaderCallback: (bounds) => LinearGradient(
+                                colors: win
+                                    ? [
+                                        const Color(0xFFFFD97A),
+                                        AppColors.accentGold,
+                                        AppColors.ctaGradStart,
+                                      ]
+                                    : [
+                                        AppColors.danger,
+                                        const Color(0xFFB71C1C),
+                                      ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ).createShader(bounds),
+                              child: Text(
+                                win
+                                    ? l10n.tr('result_victory')
+                                    : l10n.tr('result_defeat'),
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.w900,
+                                  shadows: [
+                                    Shadow(
+                                      color: AppColors.glowNeon,
+                                      blurRadius: 18,
+                                    ),
+                                    Shadow(color: Colors.black, blurRadius: 8),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
                               win
-                                  ? l10n.tr('result_victory')
-                                  : l10n.tr('result_defeat'),
+                                  ? l10n.trp('result_clear', {'n': stageNumber})
+                                  : l10n.trp('result_defeated', {
+                                      'n': stageNumber,
+                                    }),
                               textAlign: TextAlign.center,
                               style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 36,
-                                fontWeight: FontWeight.w900,
-                                shadows: [
-                                  Shadow(
-                                    color: AppColors.glowNeon,
-                                    blurRadius: 18,
+                                color: Colors.white70,
+                                fontSize: 15,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+
+                            // Game Currency 보상 카드 (글래스)
+                            GlassSurface(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
+                              art: const CardArt.fill(kCardArtResultReward),
+                              child: Row(
+                                children: [
+                                  const Text(
+                                    '⚡',
+                                    style: TextStyle(fontSize: 22),
                                   ),
-                                  Shadow(color: Colors.black, blurRadius: 8),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      win
+                                          ? l10n.tr('result_game_win')
+                                          : l10n.tr('result_game_loss'),
+                                      style: const TextStyle(
+                                        color: Colors.white54,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    win ? '+$gameReward' : '0',
+                                    style: TextStyle(
+                                      color: win
+                                          ? AppColors.accent
+                                          : Colors.white54,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            win
-                                ? l10n.trp('result_clear', {'n': stageNumber})
-                                : l10n.trp('result_defeated', {
-                                    'n': stageNumber,
-                                  }),
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 15,
-                            ),
-                          ),
-                          const SizedBox(height: 14),
+                            const SizedBox(height: 14),
 
-                          // Game Currency 보상 카드 (글래스)
-                          GlassSurface(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 14,
-                            ),
-                            art: const CardArt.fill(kCardArtResultReward),
-                            child: Row(
-                              children: [
-                                const Text('⚡', style: TextStyle(fontSize: 22)),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    win
-                                        ? l10n.tr('result_game_win')
-                                        : l10n.tr('result_game_loss'),
-                                    style: const TextStyle(
-                                      color: Colors.white54,
-                                      fontSize: 13,
-                                    ),
+                            // 파티 요약 카드 (글래스, 프롬프트 §38: Current Party / Synergy / Party Attack)
+                            GlassSurface(
+                              padding: const EdgeInsets.all(14),
+                              art: const CardArt.fill(kCardArtResultParty),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        l10n.tr('party_summary'),
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      Text(
+                                        l10n.trp('result_attack', {
+                                          'n': baseAttack,
+                                        }),
+                                        style: const TextStyle(
+                                          color: AppColors.accent,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ),
-                                Text(
-                                  win ? '+$gameReward' : '0',
-                                  style: TextStyle(
-                                    color: win
-                                        ? AppColors.accent
-                                        : Colors.white54,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-
-                          // 파티 요약 카드 (글래스, 프롬프트 §38: Current Party / Synergy / Party Attack)
-                          GlassSurface(
-                            padding: const EdgeInsets.all(14),
-                            art: const CardArt.fill(kCardArtResultParty),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      l10n.tr('party_summary'),
-                                      style: const TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const Spacer(),
-                                    Text(
-                                      l10n.trp('result_attack', {
-                                        'n': baseAttack,
-                                      }),
-                                      style: const TextStyle(
-                                        color: AppColors.accent,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                for (final e in RuneElement.normal)
-                                  if (party.partyCount(e) > 0)
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 3,
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Text(
-                                            e.emoji,
-                                            style: const TextStyle(
-                                              fontSize: 16,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          SizedBox(
-                                            width: 70,
-                                            child: Text(
-                                              l10n.tr('element_${e.name}'),
+                                  const SizedBox(height: 8),
+                                  for (final e in RuneElement.normal)
+                                    if (party.partyCount(e) > 0)
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 3,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Text(
+                                              e.emoji,
                                               style: const TextStyle(
-                                                color: Colors.white70,
-                                                fontSize: 13,
+                                                fontSize: 16,
                                               ),
-                                              overflow: TextOverflow.ellipsis,
                                             ),
-                                          ),
-                                          const Spacer(),
-                                          Text(
-                                            'N=${party.partyCount(e)}',
-                                            style: const TextStyle(
-                                              color: Colors.white54,
-                                              fontSize: 12,
+                                            const SizedBox(width: 8),
+                                            SizedBox(
+                                              width: 70,
+                                              child: Text(
+                                                l10n.tr('element_${e.name}'),
+                                                style: const TextStyle(
+                                                  color: Colors.white70,
+                                                  fontSize: 13,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
                                             ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            'ATK ${atkByElement[e] ?? 0}',
-                                            style: const TextStyle(
-                                              color: AppColors.accent,
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.bold,
+                                            const Spacer(),
+                                            Text(
+                                              'N=${party.partyCount(e)}',
+                                              style: const TextStyle(
+                                                color: Colors.white54,
+                                                fontSize: 12,
+                                              ),
                                             ),
-                                          ),
-                                        ],
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              'ATK ${atkByElement[e] ?? 0}',
+                                              style: const TextStyle(
+                                                color: AppColors.accent,
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          _DamageAnalysisCard(summary: combat),
-                          // 영웅 성장: 편성 영웅 초상화 + 각자 Lv/EXP 진행/획득 EXP.
-                          // 패배(EXP 미지급)이거나 진행도가 없으면 숨긴다.
-                          if (win &&
-                              progress != null &&
-                              party.partyTotal > 0) ...[
                             const SizedBox(height: 12),
-                            _HeroExpCard(
-                              heroes: party.partyHeroes,
-                              progress: progress!,
-                              levelUps: levelUps,
-                              stageNumber: stageNumber,
-                            ),
+                            _DamageAnalysisCard(summary: combat),
+                            // 영웅 성장: 편성 영웅 초상화 + 각자 Lv/EXP 진행/획득 EXP.
+                            // 패배(EXP 미지급)이거나 진행도가 없으면 숨긴다.
+                            if (win &&
+                                progress != null &&
+                                party.partyTotal > 0) ...[
+                              const SizedBox(height: 12),
+                              _HeroExpCard(
+                                heroes: party.partyHeroes,
+                                progress: progress!,
+                                levelUps: levelUps,
+                                stageNumber: stageNumber,
+                              ),
+                            ],
+                            const SizedBox(height: 18),
                           ],
-                          const SizedBox(height: 18),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
 
-                  // 액션 버튼 (사양 2-3: 승리 [로비로 이동]/[다음 스테이지],
-                  // 패배 [로비로 이동]/[재도전 (Play 1)] — [상점으로] 버튼은 두 화면
-                  // 모두에서 제거. 성장·충전은 로비의 상점 탭/광고 칩에서 처리한다).
-                  OutlinedButton.icon(
-                    key: const ValueKey('result-lobby'),
-                    onPressed: () => _exitToHub(context, 'lobby'),
-                    icon: const Icon(Icons.home),
-                    label: Text(l10n.tr('result_btn_lobby')),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white70,
-                      side: const BorderSide(color: Colors.white24),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    // 액션 버튼 (사양 2-3: 승리 [로비로 이동]/[다음 스테이지],
+                    // 패배 [로비로 이동]/[재도전 (Play 1)] — [상점으로] 버튼은 두 화면
+                    // 모두에서 제거. 성장·충전은 로비의 상점 탭/광고 칩에서 처리한다).
+                    OutlinedButton.icon(
+                      key: const ValueKey('result-lobby'),
+                      onPressed: () => _exitToHub(context, 'lobby'),
+                      icon: const Icon(Icons.home),
+                      label: Text(l10n.tr('result_btn_lobby')),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white70,
+                        side: const BorderSide(color: Colors.white24),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  if (win)
-                    // 규칙 1: Primary CTA — 네온 그라데이션 (다음 스테이지)
-                    GradientButton(
-                      key: const ValueKey('result-next'),
-                      onPressed: () => _handleEntry(context, 'next'),
-                      icon: Icons.arrow_forward,
-                      label: l10n.tr('result_btn_next'),
-                      fontSize: 16,
-                    )
-                  else
-                    // 규칙 1: Primary CTA — 네온 그라데이션 (재도전, Play 1 소모)
-                    GradientButton(
-                      key: const ValueKey('result-retry'),
-                      onPressed: () => _handleEntry(context, 'retry'),
-                      icon: Icons.replay,
-                      label: l10n.trp('result_btn_retry', {
-                        'n': RuneMeta.stageEntryCost,
-                      }),
-                      fontSize: 16,
-                    ),
-                  const SizedBox(height: 8),
-                ],
+                    const SizedBox(height: 10),
+                    if (win)
+                      // 규칙 1: Primary CTA — 네온 그라데이션 (다음 스테이지)
+                      GradientButton(
+                        key: const ValueKey('result-next'),
+                        onPressed: () => _handleEntry(context, 'next'),
+                        icon: Icons.arrow_forward,
+                        label: l10n.tr('result_btn_next'),
+                        fontSize: 16,
+                      )
+                    else
+                      // 규칙 1: Primary CTA — 네온 그라데이션 (재도전, Play 1 소모)
+                      GradientButton(
+                        key: const ValueKey('result-retry'),
+                        onPressed: () => _handleEntry(context, 'retry'),
+                        icon: Icons.replay,
+                        label: l10n.trp('result_btn_retry', {
+                          'n': RuneMeta.stageEntryCost,
+                        }),
+                        fontSize: 16,
+                      ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
               ),
             ),
           ),
@@ -776,4 +796,54 @@ class _HeroExpTile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 첫 패배 결과 화면에서 안내자 대사창을 **1회만** 띄우는 트리거.
+///
+/// 결과 화면은 StatelessWidget 이라 initState 가 없어, 이 얇은 래퍼가 열림을
+/// 감지해 post-frame 으로 대사창을 띄운다. CTA([동료 영입하러 가기])를 누르면
+/// [onGoShop] 을 호출한다 — 대사창이 먼저 닫힌 뒤 호출되므로 `Navigator.pop` 이
+/// 다이얼로그가 아니라 결과 라우트를 향한다.
+class _FirstDefeatGuide extends StatefulWidget {
+  const _FirstDefeatGuide({
+    required this.enabled,
+    required this.onGoShop,
+    required this.child,
+  });
+
+  final bool enabled;
+  final VoidCallback onGoShop;
+  final Widget child;
+
+  @override
+  State<_FirstDefeatGuide> createState() => _FirstDefeatGuideState();
+}
+
+class _FirstDefeatGuideState extends State<_FirstDefeatGuide> {
+  bool _shown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.enabled) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _show());
+    }
+  }
+
+  Future<void> _show() async {
+    if (_shown || !mounted) return;
+    _shown = true;
+    final l10n = LanguageScope.of(context).strings;
+    final go = await showGuideDialog(
+      context,
+      message: l10n.tr('guide_first_defeat_msg'),
+      ctaLabel: l10n.tr('guide_first_defeat_cta'),
+      cancelLabel: l10n.tr('guide_first_defeat_cancel'),
+    );
+    if (!mounted) return;
+    if (go == true) widget.onGoShop();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

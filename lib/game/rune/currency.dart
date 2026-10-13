@@ -26,6 +26,9 @@ enum CurrencyTxType {
   /// 보상형 광고 시청 (+Play 또는 +Hero, 멱등 id).
   rewardedAd,
 
+  /// 첫 패배 동료 영입 가이드 지원금 (+Hero, 멱등 id).
+  guideGift,
+
   /// 영웅 영입 (-Hero).
   heroRecruit,
 

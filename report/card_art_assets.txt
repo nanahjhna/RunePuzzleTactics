@@ -1,0 +1,170 @@
+Rune Puzzle Tactics — 카드 아트 더미 에셋 인벤토리
+=================================================
+작성 일시: 2026-10-08
+기준: lib/widgets/card_art.dart, lib/theme/ui_sprites.dart (kCardArt*),
+      tool/gen_card_art.py 로 생성된 assets/ui_dummy/cardart_*.png 16장
+
+═══════════════════════════════════════════════════════════════════════════
+1. 개요
+═══════════════════════════════════════════════════════════════════════════
+
+카드형 섹션(글래스 카드 / 9-slice 프레임 패널 / 다이얼로그) 뒤에 깔리는
+**더미 배경·헤더 이미지** 16장. 실아트가 나오기 전까지 화면에
+"이 자리에 이미지가 들어간다"는 감각을 심는 용도다.
+
+- 생성 도구 : tool/gen_card_art.py  →  python tool/gen_card_art.py (멱등)
+- 경로 상수 : lib/theme/ui_sprites.dart 의 kCardArt* (한 곳에 모음)
+- 렌더 위젯 : lib/widgets/card_art.dart
+    - CardArt.fill      : 프레임 전체를 덮는 배경
+    - CardArt.header    : 상단 밴드(기본 높이 96px, 아래로 fade)
+    - CardArtBackdrop   : 프레임이 없는 자리(다이얼로그 본체)에 아트를 깔기
+- 층위      : 카드 배경색 → [카드 아트] → 9-slice 프레임 → 콘텐츠
+- 파일 위치 : assets/ui_dummy/ (pubspec.yaml 의 폴더 선언으로 자동 포함)
+
+═══════════════════════════════════════════════════════════════════════════
+2. 에셋 목록 표
+═══════════════════════════════════════════════════════════════════════════
+
+【 A. 전체 배경 (CardArt.fill / CardArtBackdrop) — 11장 】
+
+  파일명                      크기(WxH)   용량   알파   사용 상수                   적용 화면
+  ─────────────────────────────────────────────────────────────────────────────────────────
+  cardart_lobby_stage.png     640x360    57KB  200    kCardArtLobbyStage           로비 스테이지 카드
+  cardart_lobby_party.png     768x176    10KB  200    kCardArtLobbyParty           로비 파티 요약 카드
+  cardart_result_reward.png   768x160    20KB  200    kCardArtResultReward         결과 보상 카드
+  cardart_result_party.png    768x384    28KB  200    kCardArtResultParty          결과 파티 요약 카드
+  cardart_result_damage.png   768x512    73KB  200    kCardArtResultDamage         결과 데미지 분석 카드
+  cardart_result_stats.png    768x384    27KB  200    kCardArtResultStats          결과 영웅 스탯 카드
+  cardart_settings.png        512x768    37KB  200    kCardArtSettings            설정 그룹 카드
+  cardart_shop_gacha.png      512x512    69KB  200    kCardArtShopGacha           상점 뽑기 패널
+  cardart_main_nav.png        1024x192   12KB  210    kCardArtMainNav             하단 탭바
+  cardart_hero_detail.png     512x704    52KB  205    kCardArtHeroDetail          영웅 상세 다이얼로그
+  cardart_gacha_dialog.png    512x640    51KB  240    kCardArtGachaDialog         가챠 결과 다이얼로그
+
+【 B. 헤더 밴드 (CardArt.header) — 5장 】 (모두 1024x256, 알파 200)
+
+  파일명                            크기(WxH)   용량   사용 상수              적용 화면
+  ─────────────────────────────────────────────────────────────────────────
+  cardart_header_party.png          1024x256   33KB   kCardArtHeaderParty    파티 편성 프레임
+  cardart_header_codex.png          1024x256   39KB   kCardArtHeaderCodex    영웅도감 프레임
+  cardart_header_tutorial.png       1024x256   18KB   kCardArtHeaderTutorial 튜토리얼 안내 카드
+  cardart_header_stage_prep.png     1024x256   35KB   kCardArtHeaderStagePrep 출격 준비 다이얼로그
+  cardart_header_sheet.png          1024x256   16KB   kCardArtHeaderSheet    영웅 선택 바텀시트
+
+  합계: 16장 / 577KB
+
+═══════════════════════════════════════════════════════════════════════════
+3. 화면별 상세 매핑
+═══════════════════════════════════════════════════════════════════════════
+
+── 메인 화면 (lib/screens/rune/rune_main_screen.dart) ──────────────────────
+  · 하단 탭바 카드 (UiFrame.round24), art: L409
+      → cardart_main_nav.png (fill, 1024x192, 알파 210)
+  · 광고 패널 (UiFrame.round24, L382) — 【제외】 AdMob 배너가 아트를 가림
+
+── 로비 탭 (lib/screens/rune/rune_lobby_tab.dart) ─────────────────────────
+  · 스테이지 카드 _StageCard (GlassSurface), art: L594
+      → cardart_lobby_stage.png (fill, 640x360)
+  · 현재 파티 요약 카드 (GlassSurface), art: L187
+      → cardart_lobby_party.png (fill, 768x176)
+
+── 파티 탭 (lib/screens/rune/rune_party_tab.dart) ─────────────────────────
+  · 파티 편성 프레임 _InventoryFrame (UiFrame.round4), art: L60
+      → cardart_header_party.png (header, 1024x256)
+  · 영웅도감 프레임 _InventoryFrame (UiFrame.round4), art: L171
+      → cardart_header_codex.png (header, 1024x256)
+  · 【제외】 속성 탭 칩 / 6열 영웅 그리드·5열 도감 그리드 타일 —
+      반복 타일이며 상태별 배경색(보유/편성중/미보유)이 이미 존재
+
+── 상점 탭 (lib/screens/rune/rune_shop_tab.dart) ──────────────────────────
+  · 뽑기 패널 _GachaPanel (GlassSurface), art: L191
+      → cardart_shop_gacha.png (fill, 512x512)
+  · 【제외】 뽑기 버튼 2장 (_PullButton, UiFrame.round12) — 버튼은 섹션이 아님
+
+── 설정 탭 (lib/screens/rune/rune_settings_tab.dart) ──────────────────────
+  · 설정 그룹 카드 (GlassSurface), art: L61
+      → cardart_settings.png (fill, 512x768)
+
+── 결과 화면 (lib/screens/rune/rune_result_screen.dart) ───────────────────
+  · Game Currency 보상 카드 (GlassSurface), art: L169
+      → cardart_result_reward.png (fill, 768x160)
+  · 파티 요약 카드 (GlassSurface), art: L203
+      → cardart_result_party.png (fill, 768x384)
+  · 데미지 분석 카드 _DamageAnalysisCard (GlassSurface), art: L427
+      → cardart_result_damage.png (fill, 768x512)
+  · 영웅 개별 스탯 카드 _HeroStatsCard (GlassSurface), art: L620
+      → cardart_result_stats.png (fill, 768x384)
+
+── 다이얼로그 / 시트 ───────────────────────────────────────────────────────
+  · 영웅 상세 (lib/screens/rune/hero_detail_dialog.dart) CardArtBackdrop, L135
+      → cardart_hero_detail.png (fill, 512x704, 알파 205) — Material 색 위
+  · 가챠 결과 (lib/screens/rune/hero_gacha_dialog.dart) CardArtBackdrop, L233
+      → cardart_gacha_dialog.png (fill, 512x640, 알파 240) — 반투명 Material 뒤
+  · 출격 준비 (lib/screens/rune/stage_prep_dialog.dart) UiFrame.round24, L140
+      → cardart_header_stage_prep.png (header, 1024x256)
+  · 영웅 선택 바텀시트 (lib/widgets/party_editor.dart) GlassBottomSheet, L105
+      → cardart_header_sheet.png (header, 1024x256)
+  · 튜토리얼 안내 카드 (lib/screens/rune/rune_tutorial_view.dart)
+      UiFrame.round14, L370 → cardart_header_tutorial.png (header, 1024x256)
+  · 【제외】 출격 준비 입장재화 행 (UiFrame.round12) — 높이 38px 의 칩 행
+
+═══════════════════════════════════════════════════════════════════════════
+4. 더미 규칙 / 유의사항
+═══════════════════════════════════════════════════════════════════════════
+
+1. **알파를 낮게 굽는다.** 기본 200/255 — 카드 배경색과 섞여 흰 텍스트가
+   그 위에서도 읽힌다. 반투명 Material 뒤에 깔리는 cardart_gacha_dialog 만
+   240 으로 올려 뚫고 보이게 한다.
+2. **라운드 마스크가 이미지에 굽혀 있다.** UiFrame 은 Stack 을 직각으로
+   클립하므로 모서리 알파가 0 으로 빠지는 마스크를 이미지에 굽는다.
+   다이얼로그 형태 반경이 바뀌어도 이미지를 다시 만들 필요가 없다.
+3. **헤더형은 아래로 fade.** 아래 40% 구간 알파를 255 → 0 으로 흘려
+   "상단 밴드"로만 읽힌다. 기본 높이는 위젯 인자 height (기본 96px).
+4. **9-slice 가 아니다.** BoxFit.cover 로 늘려 쓰므로 슬라이스 재측정이
+   필요 없다. 실아트 교체 시 **경로 상수만** 바꾸면 된다.
+5. **재생성은 멱등.** python tool/gen_card_art.py 를 다시 돌리면 같은
+   파일을 덮어쓴다. 규격 변경은 스크립트의 SPECS(크기/액센트/패턴/알파)만.
+
+── 교체 절차 (실아트 확보 시) ──────────────────────────────────────────────
+  1) assets/ui_dummy/cardart_*.png 를 같은 **비율**의 실아트로 교체
+     (또는 lib/theme/ui_sprites.dart 의 경로 문자열만 실아트로 변경)
+  2) 알파 없는 실아트일 때는 모서리 페이드를 따로 넣어야
+     카드 코너가 각져 보이지 않는다
+  3) 나머지 호출 코드(각 화면 art: 인자)는 건드릴 필요 없음
+  4) 새 섹션 추가 시: 스크립트에 CardArtSpec 추가 → 실행 →
+     ui_sprites.dart 에 kCardArt 상수 추가 → 화면에 art: 인자 연결
+
+── 패턴/색상 구성 (화면 성격 구분용) ─────────────────────────────────────
+  · colors : AppColors 포인트 컬러(골드/블루/레드/퍼플/그린)를 다크
+             인디고(BASE_TOP/BASE_BOTTOM)로 섞어 사용
+  · patterns: stripes(대각선, 역동성) / scan(스캔라인, 목록·요약) /
+             lattice(마름모, 뽑기·편성) / dots(도트, 정보) /
+             arcs(동심호, 영웅·가차)
+
+═══════════════════════════════════════════════════════════════════════════
+5. 부록 — 상수·파일·사용처 3-way 검증
+═══════════════════════════════════════════════════════════════════════════
+
+ui_sprites.dart 에 정의된 kCardArt* 16개 전부, lib/ 안에 사용처 1곳 이상 확인됨
+(2026-10-08 grep 기준). 미사용 파일 없음.
+
+  상수                      파일명                      사용처 (파일:줄)
+  ────────────────────────────────────────────────────────────────────────
+  kCardArtLobbyStage        cardart_lobby_stage.png     rune_lobby_tab:594
+  kCardArtLobbyParty        cardart_lobby_party.png     rune_lobby_tab:187
+  kCardArtResultReward      cardart_result_reward.png   rune_result_screen:169
+  kCardArtResultParty       cardart_result_party.png    rune_result_screen:203
+  kCardArtResultDamage      cardart_result_damage.png   rune_result_screen:427
+  kCardArtResultStats       cardart_result_stats.png    rune_result_screen:620
+  kCardArtSettings          cardart_settings.png        rune_settings_tab:61
+  kCardArtShopGacha         cardart_shop_gacha.png      rune_shop_tab:191
+  kCardArtMainNav           cardart_main_nav.png        rune_main_screen:409
+  kCardArtHeroDetail        cardart_hero_detail.png     hero_detail_dialog:135
+  kCardArtGachaDialog       cardart_gacha_dialog.png    hero_gacha_dialog:233
+  kCardArtHeaderParty       cardart_header_party.png    rune_party_tab:60
+  kCardArtHeaderCodex       cardart_header_codex.png    rune_party_tab:171
+  kCardArtHeaderTutorial    cardart_header_tutorial.png rune_tutorial_view:370
+  kCardArtHeaderStagePrep   cardart_header_stage_prep.png stage_prep_dialog:140
+  kCardArtHeaderSheet       cardart_header_sheet.png    party_editor:105
+
+  ※ 위 줄 번호는 참고용 스냅샷 — 리팩토링 시 갱신 필요.

@@ -96,6 +96,9 @@ class _RuneBattleViewState extends State<RuneBattleView> {
   /// 그 값은 [RuneProgress] 에만 있으므로 여기서 갱신본을 보관해 넘긴다.
   RuneProgress? _lastPostBattleProgress;
 
+  /// 이번 전투가 **첫 패배 가이드** 발동 조건이었는지 (결과 화면 대사창 표시용).
+  bool _showFirstDefeatGuide = false;
+
   @override
   void initState() {
     super.initState();
@@ -178,6 +181,20 @@ class _RuneBattleViewState extends State<RuneBattleView> {
               txId: 'stage_clear_${stageNumber}_run$_runId',
             )
           : current.recordDefeat(stageNumber: stageNumber);
+      // 첫 패배 동료 영입 가이드: 튜토리얼을 마친 뒤 **처음** 지는 순간 딱 1회
+      // 발동한다. 지원금(Hero Currency)을 지급하고 단계를 1(진행중)로 올려,
+      // 결과 화면 대사창 → 상점 탭 하이라이트로 이어진다.
+      final isFirstDefeat =
+          !win &&
+          current.tutorialCompleted &&
+          current.losses == 0 &&
+          current.firstDefeatGuideStep == 0;
+      if (isFirstDefeat) {
+        updated = updated.grantFirstDefeatGuideGift().withFirstDefeatGuideStep(
+          1,
+        );
+        _showFirstDefeatGuide = true;
+      }
       // 승리 보상 EXP: 편성 영웅 전원에게 스테이지 비례 지급(패배는 없음).
       // 같은 전투에서 여러 레벨이 오를 수 있고, 그 결과를 결과 화면에 넘긴다.
       var levelUps = const <HeroLevelUp>[];
@@ -270,6 +287,7 @@ class _RuneBattleViewState extends State<RuneBattleView> {
       levelUps: _lastLevelUps,
       postBattleHeroStats: _lastPostBattleStats,
       postBattleProgress: _lastPostBattleProgress,
+      showFirstDefeatGuide: _showFirstDefeatGuide,
     );
   }
 }
@@ -297,6 +315,7 @@ class _RuneBattleScreen extends StatefulWidget {
     this.levelUps = const [],
     this.postBattleHeroStats = const [],
     this.postBattleProgress,
+    this.showFirstDefeatGuide = false,
   });
 
   final int stageNumber;
@@ -352,6 +371,9 @@ class _RuneBattleScreen extends StatefulWidget {
 
   /// 승리 EXP/레벨업 반영 후의 진행도(결과 화면의 Lv/EXP 표시). null이면 숨김.
   final RuneProgress? postBattleProgress;
+
+  /// 첫 패배 동료 영입 가이드 발동 여부 (결과 화면으로 전달).
+  final bool showFirstDefeatGuide;
 
   @override
   State<_RuneBattleScreen> createState() => _RuneBattleScreenState();
@@ -815,6 +837,8 @@ class _RuneBattleScreenState extends State<_RuneBattleScreen>
           onRewardAdPlay: widget.onRewardAdPlay,
           // 요구사항 6.4: popUntil 대량 정리 시 '상점으로' 의도 전달.
           onShopRequested: widget.onShopRequested,
+          // 첫 패배 가이드: 결과 화면에서 안내자 대사창을 1회 띄운다.
+          showFirstDefeatGuide: widget.showFirstDefeatGuide,
         ),
       ),
     );
@@ -1321,7 +1345,10 @@ class _WaveRewardDialog extends StatelessWidget {
       backgroundColor: AppColors.cardDark,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: AppColors.gold.withValues(alpha: 0.8), width: 1.5),
+        side: BorderSide(
+          color: AppColors.gold.withValues(alpha: 0.8),
+          width: 1.5,
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),

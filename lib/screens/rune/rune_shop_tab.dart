@@ -23,6 +23,7 @@ import '../../theme/app_theme.dart';
 import '../../theme/ui_sprites.dart';
 import '../../widgets/card_art.dart';
 import '../../widgets/glass_surface.dart';
+import '../../widgets/guide_dialog.dart';
 import '../../widgets/hero_portrait.dart';
 import '../../widgets/ui_bar.dart';
 import '../../widgets/ui_frame.dart';
@@ -37,11 +38,20 @@ class RuneShopTab extends StatelessWidget {
     required this.progress,
     required this.onChanged,
     this.analytics,
+    this.guideActive = false,
+    this.onGuideFinished,
   });
 
   final RuneProgress progress;
   final ValueChanged<RuneProgress> onChanged;
   final RuneAnalytics? analytics;
+
+  /// 첫 패배 동료 영입 가이드 진행중 여부(`firstDefeatGuideStep == 1`).
+  /// true 면 뽑기 안내 배너를 노출하고 1연 버튼을 강조한다.
+  final bool guideActive;
+
+  /// 가이드 뽑기를 마친 뒤 로비로 복귀를 요청하는 콜백.
+  final VoidCallback? onGuideFinished;
 
   @override
   Widget build(BuildContext context) {
@@ -78,6 +88,12 @@ class RuneShopTab extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
+          // 첫 패배 가이드 진행중: 뽑기 안내 배너를 최상단에 노출한다.
+          if (guideActive) ...[
+            _GuideBanner(text: l10n.tr('guide_shop_banner')),
+            const SizedBox(height: 10),
+          ],
+
           // ── 영웅 랜덤 영입 (뽑기, Hero Currency) ──
           // **최상단 배치** (요구사항 8): 재화 소모가 가장 크고 이벤트성이라
           // 스크롤 없이 바로 보인다. 마서부는 그 아래로 미룬다.
@@ -89,7 +105,11 @@ class RuneShopTab extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
-          _GachaPanel(progress: p, onPull: (count) => _pull(context, count)),
+          _GachaPanel(
+            progress: p,
+            guideActive: guideActive,
+            onPull: (count) => _pull(context, count),
+          ),
 
           // ── 파티 스탯 업그레이드는 영웅 초상화 팝업으로 옮겨갔다 ──
           // 상점의 아이템(마도서 5종)과 파티 공통 업그레이드를 전부 걷어냈다.
@@ -131,10 +151,69 @@ class RuneShopTab extends StatelessWidget {
     }
     onChanged(r.progress);
     if (!context.mounted) return;
+    // 첫 패배 가이드: 1연(또는 10연) 영입을 마치면 단계를 완료(2)로 올리고
+    // 후속 대사를 띄운 뒤 로비로 돌려보내 바로 재도전하게 한다.
+    if (guideActive) {
+      final completed = r.progress.withFirstDefeatGuideStep(2);
+      onChanged(completed);
+      await showHeroGachaDialog(
+        context,
+        results: r.results,
+        progress: completed,
+      );
+      if (!context.mounted) return;
+      await showGuideDialog(
+        context,
+        message: l10n.tr('guide_pull_done_msg'),
+        ctaLabel: l10n.tr('guide_pull_done_cta'),
+      );
+      onGuideFinished?.call();
+      return;
+    }
     await showHeroGachaDialog(
       context,
       results: r.results,
       progress: r.progress,
+    );
+  }
+}
+
+/// 첫 패배 동료 영입 가이드 안내 배너 (상점 최상단).
+///
+/// 기능 안내 배너지만, [UiFrame] 테두리 + 안내자 이모지로 대사창과 시각적으로
+/// 이어지게 만든다.
+class _GuideBanner extends StatelessWidget {
+  const _GuideBanner({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return UiFrame.round12(
+      color: AppColors.accent.withValues(alpha: 0.7),
+      background: AppColors.accent.withValues(alpha: 0.12),
+      insets: const EdgeInsets.all(1),
+      fit: StackFit.passthrough,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            const Text('🧙', style: TextStyle(fontSize: 18)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  height: 1.35,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -169,10 +248,17 @@ class _CurrencyChip extends StatelessWidget {
 /// 재화가 모자라면 버튼을 비활성화하고, 확률은 **현재 스테이지에서 가용 등급만**
 /// 정규화해 표시한다 ([HeroGacha.rateTable]).
 class _GachaPanel extends StatelessWidget {
-  const _GachaPanel({required this.progress, required this.onPull});
+  const _GachaPanel({
+    required this.progress,
+    required this.onPull,
+    this.guideActive = false,
+  });
 
   final RuneProgress progress;
   final ValueChanged<int> onPull;
+
+  /// 첫 패배 가이드 진행중이면 1연 버튼을 강조한다(그 반대면 10연 강조).
+  final bool guideActive;
 
   @override
   Widget build(BuildContext context) {
@@ -200,6 +286,7 @@ class _GachaPanel extends StatelessWidget {
                   label: l10n.tr('gacha_single'),
                   cost: HeroGacha.singleCost,
                   enabled: affordable1,
+                  highlight: guideActive,
                   onPressed: () => onPull(1),
                 ),
               ),
@@ -210,7 +297,7 @@ class _GachaPanel extends StatelessWidget {
                   label: l10n.tr('gacha_ten'),
                   cost: HeroGacha.tenCost,
                   enabled: affordable10,
-                  highlight: true,
+                  highlight: !guideActive,
                   onPressed: () => onPull(HeroGacha.tenCount),
                 ),
               ),
