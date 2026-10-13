@@ -158,29 +158,6 @@ class BattleEngine {
 
   // ── 파도 처치 보상 (wave kill reward) ──
 
-  /// 파도 몬스터를 **처치**했을 때 보상을 적용한다 ([advanceMonster] 직후 호출).
-  ///
-  /// 1. 살아있는 영웅 전원이 최대 HP의 [waveHealRatio] 만큼 회복한다 (부활 없음,
-  ///    [PartyHeroUnit.heal] 이 최대 HP 에서 잘라 준다). 실제 회복 합계를
-  ///    [BattleState.waveKillHeal] 에 기록해 UI 가 "파티 HP +N" 으로 표기한다.
-  /// 2. 스킬을 **이미 쓴** 살아있는 영웅이 있으면 [BattleState.skillRechargePending]
-  ///    을 세운다 — 플레이어가 **1명만** 골라 스킬을 다시 쓸 수 있게 한다
-  ///    (선택은 UI 모달 → [resolveSkillRecharge] / [skipSkillRecharge]).
-  ///
-  /// 마지막 몬스터 처치는 승리로 즉시 끝나므로 보상이 없다. 보스/튜토리얼처럼
-  /// 단일 몬스터 스테이지도 [advanceMonster] 가 false 를 반환해 이 메서드는
-  /// 불리지 않는다.
-  void _applyWaveKillReward() {
-    var totalHealed = 0;
-    for (final unit in state.units) {
-      if (unit.isDown) continue;
-      totalHealed += unit.heal((unit.maxHp * waveHealRatio).round());
-    }
-    state.waveKillHeal = totalHealed;
-    state.skillRechargePending = state.skillRechargeCandidates.isNotEmpty;
-    state.waveKillSerial++;
-  }
-
   /// 플레이어가 파도 처치 보상으로 스킬을 충전할 영웅을 골랐다.
   ///
   /// [BattleState.skillRechargeCandidates] 에 없는 영웅(안 쓴/쓰러진/스킬 없는
@@ -477,43 +454,58 @@ class BattleEngine {
           // 없어도 단색/다색 편성이 자연스럽게 반영된다 — 같은 색 영웅이 많을수록
           // 합이 크고, 다른 색 룬을 맞히면 이 색의 공격력은 전혀 반영되지 않는다.
           final elementAtk = state.attackForElement(run.element);
-          // 상성은 **현재 등장 중인 몬스터**가 정한다 (약점 1.5 / 중립 1.0 /
-          // 열세 0.5). 파도 전투에서는 마리마다 약점/열세가 다르므로 스테이지
-          // 전체 값을 읽으면 안 된다.
-          final affinity = state.currentMonster.affinityFor(run.element);
-          final dmg = damageCalc.matchDamage(
-            elementAttackSum: elementAtk,
-            combo: wave.combo,
-            affinity: affinity,
-          );
-          monsterDmg += dmg;
-          // 배율 내역까지 남겨야 연출이 "왜 이 숫자"를 설명할 수 있다
-          // (상성 / 콤보 배율).
-          monsterHits.add(
-            DamageHit(
-              source: DamageSource.match,
-              element: run.element,
-              damage: dmg,
-              waveNumber: wave.waveNumber,
-              cells: run.cells,
+
+          // 2페이즈 구조: 매치 위치에 따라 존별 데미지 분배
+          final zoneDistribution = _calculateZoneDistribution(run.cells);
+          for (final zoneInfo in zoneDistribution) {
+            final slot = _slotForZone(zoneInfo.zone);
+            if (slot == null || !slot.isAlive) continue;
+
+            final affinity = slot.monster.affinityFor(run.element);
+            final dmg = damageCalc.matchDamage(
+              elementAttackSum: elementAtk,
               combo: wave.combo,
-              weaknessHit: state.currentMonster.isWeakAgainst(run.element),
-              affinityMultiplier: affinity,
-              noElementHero: elementAtk == 0,
-            ),
-          );
-          state.damageStats.record(
-            BattleDamageRecord(
-              source: BattleDamageSource.runeMatch,
-              element: run.element,
-              damage: dmg,
-            ),
-          );
+              affinity: affinity,
+            );
+            final splitDmg = (dmg * zoneInfo.damageRatio).round();
+            if (splitDmg <= 0) continue;
+
+            monsterDmg += splitDmg;
+            slot.applyDamage(splitDmg);
+
+            monsterHits.add(
+              DamageHit(
+                source: DamageSource.match,
+                element: run.element,
+                damage: splitDmg,
+                waveNumber: wave.waveNumber,
+                cells: run.cells,
+                combo: wave.combo,
+                weaknessHit: slot.monster.isWeakAgainst(run.element),
+                affinityMultiplier: affinity,
+                noElementHero: elementAtk == 0,
+              ),
+            );
+            state.damageStats.record(
+              BattleDamageRecord(
+                source: BattleDamageSource.runeMatch,
+                element: run.element,
+                damage: splitDmg,
+              ),
+            );
+          }
         }
       }
     }
 
-    state.monsterHp = max(0, state.monsterHp - monsterDmg);
+    // 페이즈1: 몬스터 3마리 전멸 시 페이즈2(보스) 전환
+    if (state.stagePhase == StagePhase.phase1) {
+      final allDead = state.monsterSlots.every((s) => !s.isAlive);
+      if (allDead) {
+        _advanceToPhase2();
+      }
+    }
+
     _applyPartyHits(partyHits);
     return _DamageRollup(
       monsterDamage: monsterDmg,
@@ -521,6 +513,60 @@ class BattleEngine {
       monsterHits: monsterHits,
       partyHits: partyHits,
     );
+  }
+
+  /// 매치 위치 → 존 분배 계산
+  List<_MatchZoneInfo> _calculateZoneDistribution(List<int> cells) {
+    final zoneCount = <ColumnZone, int>{};
+
+    for (final cell in cells) {
+      final col = cell % PuzzleBoard.cols;
+      final zone = col <= 1
+          ? ColumnZone.left
+          : col <= 3
+              ? ColumnZone.middle
+              : ColumnZone.right;
+      zoneCount[zone] = (zoneCount[zone] ?? 0) + 1;
+    }
+
+    final total = cells.length;
+    return zoneCount.entries
+        .map((e) => _MatchZoneInfo(
+              zone: e.key,
+              runeCount: e.value,
+              damageRatio: e.value / total,
+            ))
+        .toList();
+  }
+
+  /// 존에 해당하는 몬스터 슬롯 찾기
+  MonsterSlot? _slotForZone(ColumnZone zone) {
+    for (final slot in state.monsterSlots) {
+      if (slot.zone == zone) return slot;
+    }
+    return null;
+  }
+
+  /// 페이즈1 → 페이즈2 전환 (보스 등장)
+  void _advanceToPhase2() {
+    state.stagePhase = StagePhase.phase2;
+    final bossMonster = WaveMonster(
+      name: state.stage.monsterName,
+      hp: state.stage.monsterHp,
+      attack: state.stage.monsterAttack,
+      weakElement: state.stage.weakElement,
+      resistElement: state.stage.resistElement,
+    );
+    final bossSlot = MonsterSlot(
+      monster: bossMonster,
+      zone: ColumnZone.middle,
+    );
+    bossSlot.initHp();
+    state.monsterSlots.clear();
+    state.monsterSlots.add(bossSlot);
+    state.monsterHp = bossSlot.hp;
+    state.monsterMaxHp = bossSlot.maxHp;
+    state.bossCountdown = state.stage.bossCountdown;
   }
 
   /// 확정된 파티 피해([DamageHit])를 **영웅별 HP** 에 적용한다.
@@ -707,14 +753,30 @@ class BattleEngine {
     final element = spec.countElement ?? spec.element;
     final dmg = state.board.indicesOf(element).length * spec.amount;
     if (dmg > 0) {
-      final hpBefore = state.monsterHp;
-      state.monsterHp = max(0, state.monsterHp - dmg);
+      // 페이즈1: 모든 살아있는 몬스터에게 분산 피해
+      // 페이즈2: 보스에게 전체 피해
+      if (state.stagePhase == StagePhase.phase1) {
+        final aliveSlots = state.monsterSlots.where((s) => s.isAlive).toList();
+        if (aliveSlots.isNotEmpty) {
+          final perSlot = dmg ~/ aliveSlots.length;
+          for (final slot in aliveSlots) {
+            slot.applyDamage(perSlot);
+          }
+        }
+      } else {
+        for (final slot in state.monsterSlots) {
+          if (slot.isAlive) {
+            slot.applyDamage(dmg);
+            break;
+          }
+        }
+      }
       state.damageStats.record(
         BattleDamageRecord(
           source: BattleDamageSource.heroSkill,
           element: spec.element,
           damage: dmg,
-          hpBefore: hpBefore,
+          hpBefore: state.monsterHp,
           hpAfter: state.monsterHp,
           hpMax: state.monsterMaxHp,
         ),
@@ -796,20 +858,36 @@ class BattleEngine {
     final cells = state.board.indicesOf(element).toSet();
     final dmg = cells.length * spec.amount;
     if (dmg > 0) {
-      final hpBefore = state.monsterHp;
-      state.monsterHp = max(0, state.monsterHp - dmg);
+      // 페이즈1: 모든 살아있는 몬스터에게 분산 피해
+      // 페이즈2: 보스에게 전체 피해
+      if (state.stagePhase == StagePhase.phase1) {
+        final aliveSlots = state.monsterSlots.where((s) => s.isAlive).toList();
+        if (aliveSlots.isNotEmpty) {
+          final perSlot = dmg ~/ aliveSlots.length;
+          for (final slot in aliveSlots) {
+            slot.applyDamage(perSlot);
+          }
+        }
+      } else {
+        for (final slot in state.monsterSlots) {
+          if (slot.isAlive) {
+            slot.applyDamage(dmg);
+            break;
+          }
+        }
+      }
       state.damageStats.record(
         BattleDamageRecord(
           source: BattleDamageSource.heroSkill,
           element: spec.element,
           damage: dmg,
-          hpBefore: hpBefore,
+          hpBefore: state.monsterHp,
           hpAfter: state.monsterHp,
           hpMax: state.monsterMaxHp,
         ),
       );
     }
-    // 독 룬을 태워 없애고 낙하/연쇄를 잇는다 ([_blastArea] 와 같은 경로).
+    // 독 룬을 태워 없애고 낙하/연쇄를 잇다 ([_blastArea] 와 같은 경로).
     // 태울 룬이 없으면 피해 0 이벤트만 남긴다 (Water 와 동일하게 소모는 된다).
     if (cells.isEmpty) {
       return (
@@ -848,7 +926,7 @@ class BattleEngine {
       HeroSkills.maxPoisonStacks,
       before + state.board.indicesOf(element).length,
     );
-    // 스택당 피해는 **처음 걸릴 때만** 기록한다. 이미 걸린 스택의 피해가 나중
+    // 스택당 피해는 **처음 걸릴 때만** 기록한다. 이미 걸린 스택의 피해가 나전
     // 시전으로 조용히 바뀌면 플레이어가 "왜 이번 턴엔 더 적게 맞았지"로 읽는다.
     if (before == 0) state.poisonPerStack = spec.amount;
     return (
@@ -864,12 +942,11 @@ class BattleEngine {
   /// 최종 상태 판정 + 몬스터 턴 전이. [BattleResolveOutcome] 반환.
   BattleResolveOutcome _finishTurnResolve() {
     // 최종 상태 판정 (RPT-147). Monster 사망 Victory 우선 (RPT-146).
-    if (state.monsterHp <= 0) {
-      // 파도 전투: 현재 몬스터가 죽었는데 다음 몬스터가 남아 있으면 **다음 등장**
-      // 후 몬스터 턴 없이 플레이어 턴으로 넘어간다 — "한 마리 처치 = 그 턴은
-      // 안전"을 유지한다(승리할 때와 같은 틀). 마지막 몬스터면 기존처럼 승리.
-      if (state.advanceMonster()) {
-        _applyWaveKillReward();
+    // 페이즈1: 몬스터 3마리 전멸 시 페이즈2로 전환
+    if (state.stagePhase == StagePhase.phase1) {
+      final allDead = state.monsterSlots.every((s) => !s.isAlive);
+      if (allDead) {
+        _advanceToPhase2();
         state.combo = 0;
         state.phase = BattlePhase.plan;
         state.inputLocked = false;
@@ -877,10 +954,18 @@ class BattleEngine {
         _lastOutcome = BattleResolveOutcome.continued;
         return _lastOutcome;
       }
-      state.phase = BattlePhase.victory;
-      _lastMonsterAttack = null;
-      return BattleResolveOutcome.victory;
     }
+
+    // 페이즈2: 보스 처치 시 승리
+    if (state.stagePhase == StagePhase.phase2) {
+      final bossDead = state.monsterSlots.every((s) => !s.isAlive);
+      if (bossDead) {
+        state.phase = BattlePhase.victory;
+        _lastMonsterAttack = null;
+        return BattleResolveOutcome.victory;
+      }
+    }
+
     if (state.partyWiped) {
       state.phase = BattlePhase.defeat;
       _lastMonsterAttack = null;
@@ -898,13 +983,13 @@ class BattleEngine {
   void _runMonsterTurn() {
     _lastMonsterAttack = null;
     _applyPoisonTick();
+
     // 독이 마지막 HP 를 깎았으면 **반격 없이** 처리한다. 보스 궁극기도 못 쓴다
     // — 지속 피해가 "늦어도 결국 죽는다"를 남겨야 독 스택이 아깝지 않다.
-    if (state.monsterHp <= 0) {
-      // 파도 전투: 다음 몬스터가 있으면 반격 없이 다음 등장으로 넘어간다
-      // (매칭/스킬 처치와 같은 규칙 — 처치한 턴은 안전).
-      if (state.advanceMonster()) {
-        _applyWaveKillReward();
+    final anyAlive = state.monsterSlots.any((s) => s.isAlive);
+    if (!anyAlive) {
+      if (state.stagePhase == StagePhase.phase1) {
+        _advanceToPhase2();
         state.combo = 0;
         state.phase = BattlePhase.plan;
         state.inputLocked = false;
@@ -915,110 +1000,107 @@ class BattleEngine {
       _lastOutcome = BattleResolveOutcome.victory;
       return;
     }
-    // Telegraph는 UI 훅 지점 (RPT-112). 로직은 결정적.
-    if (state.stage.isBoss) {
+
+    // 페이즈2(보스) 전용: 궁극기 카운트다운
+    if (state.stagePhase == StagePhase.phase2 && state.stage.isBoss) {
       state.bossCountdown--;
       if (state.bossCountdown <= 0) {
-        // Boss Ultimate: Warning → Charge → 광역 피해 (생존 가능) (RPT-145 개편)
-        //
-        // 예전엔 고정 100 피해 + **무조건 패배**였다. 이제는 스테이지 비례
-        // 피해를 주되 대상 최대 HP의 80% 로 상한을 둬 한 방에 죽지 않는다.
-        // 패배 여부는 [BattleState.partyWiped] 가 정한다 — 버틴 영웅이 있으면
-        // 전투가 계속되고 보스는 궁극기를 다시 충전한다.
-        //
-        // 대상 영웅은 직전에 맞은 영웅(없으면 랜덤) — 연출이 그 초상화를 찍는다.
-        final focus = _pickLivingUnit(avoidLast: true);
-        for (final unit in state.livingUnits) {
-          final hpBefore = unit.hp;
-          // 스테이지 비례 피해, 단 풀피 즉사 금지(대상 최대 HP의 80% 상한).
-          final ultimateDamage = min(
-            state.stage.bossUltimateDamage,
-            (unit.maxHp * 0.8).round(),
-          );
-          final lost = unit.applyDamage(ultimateDamage);
-          // 살아있던 **전원**을 각각 적재한다 — 4명이 한 프레임에 겹치면
-          // 읽히지 않으므로 연출 계층이 순차 재생으로 펼쳐준다.
-          // [MonsterAttackEvent] 는 `damage: 0` 이라 이 경로를 담지 못한다.
-          if (lost > 0) {
-            _pendingHeroDamage.add(
-              HeroDamageEvent(
-                heroId: unit.heroId,
-                damage: lost,
-                source: HeroDamageSource.bossUltimate,
-                // 몬스터는 무속성 — 피격 연출이 속성 색을 물려받지 않는다.
-                element: null,
-                waveNumber: HeroDamageEvent.monsterTurnWave,
-              ),
-            );
-          }
-          state.damageStats.record(
-            BattleDamageRecord(
-              source: BattleDamageSource.bossUltimate,
-              element: null,
-              damage: lost,
-              hpBefore: hpBefore,
-              hpAfter: unit.hp,
-              hpMax: unit.maxHp,
-            ),
-          );
-        }
-        state.bossUltimateWarning = false;
-        _lastMonsterAttack = MonsterAttackEvent(
-          damage: 0,
-          bossCountdownAfter: state.bossCountdown,
-          isBossUltimate: true,
-          targetHeroId: focus?.heroId,
-        );
-        // **즉시 패배 없음** — 전멸했을 때만 패배한다.
-        if (state.partyWiped) {
-          state.phase = BattlePhase.defeat;
-          _lastOutcome = BattleResolveOutcome.defeat;
-          return;
-        }
-        // 궁극기를 쓰고 다시 충전한다. 그 턴은 일반 공격 없이 종료된다.
-        state.bossCountdown = state.stage.bossCountdown;
-        state.combo = 0;
-        state.phase = BattlePhase.plan;
-        state.inputLocked = false;
-        _lastOutcome = BattleResolveOutcome.continued;
+        _executeBossUltimate();
         return;
       }
-      // 보스 궁극기 경고: 2턴째에 다음 공격이 궁극기임을 미리 알린다.
       if (state.bossCountdown == 1) {
         state.bossUltimateWarning = true;
       }
     }
-    // 몬스터는 **살아있는 영웅 1명**을 랜덤으로 골라 때린다. 그 영웅의 개인
-    // 방어력으로 피해를 계산하므로, 방어 스탯이 영웅마다 다르면 받는
-    // 피해도 영웅마다 달라진다.
-    //
-    // ```
-    // 피해 = max(1, round(몬스터ATK × 100 / (100 + 대상 DEF))) − 방어막
-    // ```
-    //
-    // 상성 축은 없다 — 몬스터는 무속성이므로 상성은 매칭 데미지에만 걸린다.
+
+    // 페이즈1: 살아있는 몬스터 3마리 각각 공격
+    // 페이즈2: 보스 1마리 공격
+    final aliveSlots = state.monsterSlots.where((s) => s.isAlive).toList();
+    for (final slot in aliveSlots) {
+      _executeMonsterAttack(slot);
+      if (state.partyWiped) {
+        state.phase = BattlePhase.defeat;
+        _lastOutcome = BattleResolveOutcome.defeat;
+        return;
+      }
+    }
+
+    state.combo = 0;
+    state.phase = BattlePhase.plan;
+    state.inputLocked = false;
+    _lastOutcome = BattleResolveOutcome.continued;
+  }
+
+  /// 보스 궁극기 실행
+  void _executeBossUltimate() {
+    final focus = _pickLivingUnit(avoidLast: true);
+    for (final unit in state.livingUnits) {
+      final hpBefore = unit.hp;
+      final ultimateDamage = min(
+        state.stage.bossUltimateDamage,
+        (unit.maxHp * 0.8).round(),
+      );
+      final lost = unit.applyDamage(ultimateDamage);
+      if (lost > 0) {
+        _pendingHeroDamage.add(
+          HeroDamageEvent(
+            heroId: unit.heroId,
+            damage: lost,
+            source: HeroDamageSource.bossUltimate,
+            element: null,
+            waveNumber: HeroDamageEvent.monsterTurnWave,
+          ),
+        );
+      }
+      state.damageStats.record(
+        BattleDamageRecord(
+          source: BattleDamageSource.bossUltimate,
+          element: null,
+          damage: lost,
+          hpBefore: hpBefore,
+          hpAfter: unit.hp,
+          hpMax: unit.maxHp,
+        ),
+      );
+    }
+    state.bossUltimateWarning = false;
+    _lastMonsterAttack = MonsterAttackEvent(
+      damage: 0,
+      bossCountdownAfter: state.bossCountdown,
+      isBossUltimate: true,
+      targetHeroId: focus?.heroId,
+    );
+    if (state.partyWiped) {
+      state.phase = BattlePhase.defeat;
+      _lastOutcome = BattleResolveOutcome.defeat;
+      return;
+    }
+    state.bossCountdown = state.stage.bossCountdown;
+    state.combo = 0;
+    state.phase = BattlePhase.plan;
+    state.inputLocked = false;
+    _lastOutcome = BattleResolveOutcome.continued;
+  }
+
+  /// 개별 몬스터 공격 실행
+  void _executeMonsterAttack(MonsterSlot slot) {
     final target = _pickLivingUnit(avoidLast: true);
     if (target == null) {
-      // 이미 전멸 — 보스 궁극기를 거치지 않은 경로의 확정 방어선.
       state.phase = BattlePhase.defeat;
       _lastOutcome = BattleResolveOutcome.defeat;
       return;
     }
     _lastTargetHeroId = target.heroId;
     final breakdown = damageCalc.incomingDamage(
-      attack: state.currentMonster.attack,
+      attack: slot.monster.attack,
       defenderDefense: target.defense,
     );
     final hpBefore = target.hp;
 
-    // 보스 몬스터 일반 공격 데미지 제한: 대상 영웅 최대 HP의 80%만 적용.
-    // 보스는 강력하지만 한 번에 죽지 않도록 상한을 둔다.
-    final damage = state.stage.isBoss
+    final damage = state.stage.isBoss && state.stagePhase == StagePhase.phase2
         ? min(breakdown.damage, (target.maxHp * 0.8).round())
         : breakdown.damage;
 
-    // 요소별 스킬 재설계로 shield 가 없어 방어막 상쇄 분기도 함께 제거됐다.
-    // [PartyHeroUnit.applyDamage] 가 실제 깎인 HP 를 반환하니 그걸로 이벤트 생성.
     final lost = target.applyDamage(damage);
     if (lost > 0) {
       _pendingHeroDamage.add(
@@ -1026,7 +1108,6 @@ class BattleEngine {
           heroId: target.heroId,
           damage: lost,
           source: HeroDamageSource.monsterAttack,
-          // 몬스터는 무속성.
           element: null,
           waveNumber: HeroDamageEvent.monsterTurnWave,
         ),
@@ -1053,20 +1134,6 @@ class BattleEngine {
       targetHpAfter: target.hp,
       targetMaxHp: target.maxHp,
     );
-    // 한 명이라도 살아 있으면 계속 싸운다 (전멸이 아니라면).
-    if (state.partyWiped) {
-      state.phase = BattlePhase.defeat;
-      _lastOutcome = BattleResolveOutcome.defeat;
-      return;
-    }
-    // [4단계] 파티 HP 생존 → 몬스터 턴 종료.
-    // 새 플레이어 턴은 몬스터 공격 연출(약 0.8초)이 끝난 뒤
-    // 화면(Flame)이 [BattleEngine.startPlayerTurn]로 이행시킨다 — 몬스터 턴
-    // 종료 → 새 턴 진입 흐름을 명확히 분리한다.
-    state.combo = 0;
-    state.phase = BattlePhase.plan;
-    state.inputLocked = false;
-    _lastOutcome = BattleResolveOutcome.continued;
   }
 
   /// 직전 몬스터 반격/최종 판정(내부 전달용).
@@ -1112,16 +1179,31 @@ class BattleEngine {
     final tick = state.poisonTickDamage;
     if (tick <= 0) return;
 
-    final hpBefore = state.monsterHp;
-    state.monsterHp = max(0, state.monsterHp - tick);
-    // 남은 HP 를 넘겨 깎을 수 없으므로 실제 차감량을 기록한다.
-    final applied = hpBefore - state.monsterHp;
+    // 페이즈1: 모든 살아있는 몬스터에게 분산
+    // 페이즈2: 보스에게 전체
+    if (state.stagePhase == StagePhase.phase1) {
+      final aliveSlots = state.monsterSlots.where((s) => s.isAlive).toList();
+      if (aliveSlots.isNotEmpty) {
+        final perSlot = tick ~/ aliveSlots.length;
+        for (final slot in aliveSlots) {
+          slot.applyDamage(perSlot);
+        }
+      }
+    } else {
+      for (final slot in state.monsterSlots) {
+        if (slot.isAlive) {
+          slot.applyDamage(tick);
+          break;
+        }
+      }
+    }
+
     state.damageStats.record(
       BattleDamageRecord(
         source: BattleDamageSource.poisonTick,
         element: RuneElement.poison,
-        damage: applied,
-        hpBefore: hpBefore,
+        damage: tick,
+        hpBefore: state.monsterHp,
         hpAfter: state.monsterHp,
         hpMax: state.monsterMaxHp,
       ),
@@ -1129,7 +1211,7 @@ class BattleEngine {
     _poisonTickHit = DamageHit(
       source: DamageSource.poisonTick,
       element: RuneElement.poison,
-      damage: applied,
+      damage: tick,
     );
   }
 
@@ -1160,4 +1242,17 @@ class _DamageRollup {
 
   /// [partyDamage]의 1건 단위 내역.
   final List<DamageHit> partyHits;
+}
+
+/// 매치의 존 분배 정보
+class _MatchZoneInfo {
+  _MatchZoneInfo({
+    required this.zone,
+    required this.runeCount,
+    required this.damageRatio,
+  });
+
+  final ColumnZone zone;
+  final int runeCount;
+  final double damageRatio;
 }

@@ -195,21 +195,51 @@ class BattleHudRows extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Column(
           children: [
-            // 몬스터 영역: HP 바 → 스프라이트.
-            // 상성은 파도 전투에서 몬스터마다 다르므로 항상 **현재 등장 중인
-            // 몬스터**([BattleState.currentMonster]) 기준으로 표시한다.
-            BattleMonsterPanel(
-              spriteHeight: metrics.monsterSpriteHeight,
-              monsterHp: s.monsterHp,
-              monsterMaxHp: s.monsterMaxHp,
-              weakElement: s.currentMonster.weakElement,
-              resistElement: s.currentMonster.resistElement,
-              monsterNumber: s.monsterNumber,
-              monsterCount: s.monsterCount,
-              poisonStacks: s.poisonStacks,
-              poisonPerStack: s.poisonPerStack,
-              sprite: sprite,
-            ),
+            // 2페이즈 구조: 페이즈1(몬스터 3마리) / 페이즈2(보스 1마리)
+            if (s.stagePhase == StagePhase.phase1) ...[
+              // 페이즈1: 몬스터 3마리를 가로로 배치 (컴팩트 모드)
+              SizedBox(
+                height: metrics.monsterSpriteHeight * 0.55 + 80,
+                child: Row(
+                  children: [
+                    for (var i = 0; i < s.monsterSlots.length; i++)
+                      Expanded(
+                        child: BattleMonsterPanel(
+                          spriteHeight: metrics.monsterSpriteHeight * 0.35,
+                          monsterHp: s.monsterSlots[i].hp,
+                          monsterMaxHp: s.monsterSlots[i].maxHp,
+                          weakElement: s.monsterSlots[i].monster.weakElement,
+                          resistElement: s.monsterSlots[i].monster.resistElement,
+                          monsterNumber: i + 1,
+                          monsterCount: s.monsterSlots.length,
+                          poisonStacks: s.poisonStacks,
+                          poisonPerStack: s.poisonPerStack,
+                          sprite: i == 0 ? sprite : null,
+                          isAlive: s.monsterSlots[i].isAlive,
+                          zone: s.monsterSlots[i].zone,
+                          compact: true,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              // 페이즈2: 보스 1마리
+              BattleMonsterPanel(
+                spriteHeight: metrics.monsterSpriteHeight,
+                monsterHp: s.monsterHp,
+                monsterMaxHp: s.monsterMaxHp,
+                weakElement: s.currentMonster.weakElement,
+                resistElement: s.currentMonster.resistElement,
+                monsterNumber: 1,
+                monsterCount: 1,
+                poisonStacks: s.poisonStacks,
+                poisonPerStack: s.poisonPerStack,
+                sprite: sprite,
+                isAlive: s.monsterSlots.isNotEmpty && s.monsterSlots[0].isAlive,
+                zone: ColumnZone.middle,
+              ),
+            ],
             const SizedBox(height: 8),
 
             // 통합 파티 HP 바는 없다 — 체력은 각 영웅 초상화 **하단**에 표시한다.
@@ -253,6 +283,9 @@ class BattleMonsterPanel extends StatelessWidget {
     this.poisonStacks = 0,
     this.poisonPerStack = 0,
     this.sprite,
+    this.isAlive = true,
+    this.zone,
+    this.compact = false,
   });
 
   final double spriteHeight;
@@ -286,44 +319,84 @@ class BattleMonsterPanel extends StatelessWidget {
   /// 이 위젯은 엔진/오디오를 알지 않는다).
   final Widget? sprite;
 
+  /// 몬스터 생존 여부. false 이면 사망 연출(어둡게 + ✕).
+  final bool isAlive;
+
+  /// 존 표시 — 페이즈1에서 좌/중/우 구분.
+  final ColumnZone? zone;
+
+  /// 컴팩트 모드 — 페이즈1 가로 배치 시 작은 크기로 표시.
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
     final l10n = LanguageScope.of(context).strings;
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         // 예전에 있던 ⚖️ 시너지 설명 칩은 삭제했다. 대신 **실제로 배율이 걸리는**
         // 약점/열세 속성 두 개만 남긴다 — 툴팁 대신 규칙을 말한다.
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _AffinityChip(
-              element: weakElement,
-              text: l10n.tr('battle_monster_weak'),
-              color: AppColors.accent,
-            ),
-            const SizedBox(width: 6),
-            _AffinityChip(
-              element: resistElement,
-              text: l10n.tr('battle_monster_resist'),
-              color: Colors.white38,
-            ),
-            // 독은 상성이 아니라 **누적 상태**라 약점/열세 칩과 성격이 다르다.
-            // 붙어 있을 때만 세 번째 칩으로 나타난다.
-            if (poisonStacks > 0) ...[
+        if (!compact)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _AffinityChip(
+                element: weakElement,
+                text: l10n.tr('battle_monster_weak'),
+                color: AppColors.accent,
+              ),
               const SizedBox(width: 6),
               _AffinityChip(
-                element: RuneElement.poison,
-                text: poisonPerStack > 0
-                    ? '$poisonStacks ×$poisonPerStack'
-                    : '$poisonStacks',
-                color: Color(RuneElement.poison.argb),
+                element: resistElement,
+                text: l10n.tr('battle_monster_resist'),
+                color: Colors.white38,
               ),
+              // 독은 상성이 아니라 **누적 상태**라 약점/열세 칩과 성격이 다르다.
+              // 붙어 있을 때만 세 번째 칩으로 나타난다.
+              if (poisonStacks > 0) ...[
+                const SizedBox(width: 6),
+                _AffinityChip(
+                  element: RuneElement.poison,
+                  text: poisonPerStack > 0
+                      ? '$poisonStacks ×$poisonPerStack'
+                      : '$poisonStacks',
+                  color: Color(RuneElement.poison.argb),
+                ),
+              ],
             ],
-          ],
-        ),
-        const SizedBox(height: 6),
+          )
+        else
+          // 컴팩트 모드: 약점/열세 아이콘만 작게 표시
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                weakElement.emoji,
+                style: const TextStyle(fontSize: 10),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                resistElement.emoji,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.white38,
+                ),
+              ),
+              if (poisonStacks > 0) ...[
+                const SizedBox(width: 4),
+                Text(
+                  '☠$poisonStacks',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Color(RuneElement.poison.argb),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        SizedBox(height: compact ? 2 : 6),
         // 파도 진행 칩 — 단일 몬스터(1마리)면 숨겨 기존 배치를 그대로 유지한다.
-        if (monsterCount > 1) ...[
+        if (!compact && monsterCount > 1) ...[
           Text(
             l10n.trp('battle_monster_wave', {
               'i': '$monsterNumber',
@@ -338,22 +411,39 @@ class BattleMonsterPanel extends StatelessWidget {
           ),
           const SizedBox(height: 4),
         ],
-        Center(
-          child: SizedBox(
-            width: 110,
-            child: _HpBar(
-              label: l10n.tr('hp_monster'),
-              value: monsterHp,
-              max: monsterMaxHp,
-              color: AppColors.danger,
-              compact: true,
+        // HP 바 — compact 모드에서 자동 폭
+        _HpBar(
+          label: l10n.tr('hp_monster'),
+          value: monsterHp,
+          max: monsterMaxHp,
+          color: AppColors.danger,
+          compact: true,
+        ),
+        SizedBox(height: compact ? 2 : 4),
+        if (zone != null)
+          Text(
+            switch (zone!) {
+              ColumnZone.left => '←',
+              ColumnZone.middle => '●',
+              ColumnZone.right => '→',
+            },
+            style: TextStyle(
+              color: isAlive ? Colors.white70 : Colors.white24,
+              fontSize: compact ? 8 : 10,
+              fontWeight: FontWeight.w900,
             ),
           ),
-        ),
-        const SizedBox(height: 4),
         SizedBox(
           height: spriteHeight,
-          child: sprite ?? const SizedBox.shrink(),
+          child: Opacity(
+            opacity: isAlive ? 1.0 : 0.3,
+            child: ColorFiltered(
+              colorFilter: isAlive
+                  ? const ColorFilter.mode(Colors.transparent, BlendMode.dst)
+                  : const ColorFilter.mode(Colors.grey, BlendMode.saturation),
+              child: sprite ?? const SizedBox.shrink(),
+            ),
+          ),
         ),
       ],
     );

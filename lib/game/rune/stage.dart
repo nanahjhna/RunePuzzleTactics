@@ -286,30 +286,21 @@ class StageGenerator {
         .round();
     final gold = (baseGold * (1 + stageNumber * 0.04)).round();
 
-    // ── 파도 구성 (RPT 파도 전투) ──
-    // 일반 2마리·정예 3마리를 **순차 등장**시킨다. 보스는 단독(파도 없음) —
-    // 궁극기/카운트다운이 단일 몬스터 전제이기 때문이다.
+    // ── 2페이즈 구조 ──
+    // 페이즈1: 몬스터 3마리가 좌/중/우 열에 동시 배치 (보드 열 기반 데미지 라우팅)
+    // 페이즈2: 보스 1마리 (어느 열에서 매치되든 데미지)
     //
-    // HP는 기존 `monsterHp`(합계)를 마리 수로 나눈다 — 합계가 그대로라
-    // 스테이지별 밸런스 곡선이 전과 동일하게 유지된다. 나머지는 마지막 마리에.
-    //
-    // 약점/열세는 몬스터 인덱스만큼 어긋나게 배정한다(예: 1번째 불/풀,
-    // 2번째 풀/물). 3마리 연속이라도 5속성 순환 안에서 절대 겹치지 않는다 —
-    // "먼저 잡을 색"을 마리마다 다르게 줘서 플레이어가 처치 순서를 고르게 한다.
-    final waveCount = switch (type) {
-      StageType.boss => 1,
-      StageType.normal => 2,
-      StageType.elite => 3,
-    };
+    // 페이즈1 몬스터 HP = 기존 waveHp × 0.45 (3마리 동시 상대)
+    // 페이즈1 몬스터 ATK = 기존 waveAtk × 0.55 (총 인커밍 1.65배 수준)
+    // 약점/열세는 몬스터 인덱스만큼 어긋나게 배정 (5속성 순환)
+    final phase1Hp = (monsterHp * 0.45).round();
+    final phase1Atk = (monsterAttack * 0.55).round();
     final wave = <WaveMonster>[
-      for (var i = 0; i < waveCount; i++)
+      for (var i = 0; i < 3; i++)
         WaveMonster(
           name: monsterNameFor(stageNumber),
-          hp: waveCount > 1
-              ? (monsterHp ~/ waveCount) +
-                  (i == waveCount - 1 ? monsterHp % waveCount : 0)
-              : monsterHp,
-          attack: monsterAttack,
+          hp: phase1Hp,
+          attack: phase1Atk,
           weakElement: weakElementFor(stageNumber + i),
           resistElement: resistElementFor(stageNumber + i),
         ),
@@ -335,8 +326,8 @@ class StageGenerator {
       goldReward: gold,
       monsterName: monsterNameFor(stageNumber),
       subtitle: monsterSubtitleFor(stageNumber),
-      // 보스 외에는 파도 목록을 실어 순차 등장시킨다.
-      wave: type == StageType.boss ? const [] : wave,
+      // 모든 스테이지가 2페이즈 구조: 페이즈1에 몬스터 3마리 배치
+      wave: wave,
     );
   }
 }

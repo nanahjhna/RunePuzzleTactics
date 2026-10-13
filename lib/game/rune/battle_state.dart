@@ -121,6 +121,50 @@ enum BattlePhase {
   retreat,
 }
 
+/// 스테이지 페이즈 — 2페이즈 구조 (페이즈1: 몬스터 3마리, 페이즈2: 보스)
+enum StagePhase {
+  phase1,
+  phase2,
+}
+
+/// 보드 열 존 — 6열을 2열씩 3구분하여 몬스터에게 데미지 라우팅
+enum ColumnZone {
+  left,   // 열 0-1 → 왼쪽 몬스터
+  middle, // 열 2-3 → 중간 몬스터
+  right,  // 열 4-5 → 오른쪽 몬스터
+}
+
+/// 몬스터 슬롯 — 페이즈1의 3마리 몬스터를 개별 관리
+class MonsterSlot {
+  MonsterSlot({
+    required this.monster,
+    required this.zone,
+    this.isAlive = true,
+  });
+
+  final WaveMonster monster;
+  final ColumnZone zone;
+  bool isAlive;
+
+  int hp = 0;
+  int maxHp = 0;
+
+  void initHp() {
+    hp = monster.hp;
+    maxHp = monster.hp;
+  }
+
+  double get hpRatio => maxHp <= 0 ? 0 : (hp / maxHp).clamp(0.0, 1.0);
+
+  int applyDamage(int amount) {
+    if (amount <= 0 || !isAlive) return 0;
+    final before = hp;
+    hp = max(0, hp - amount);
+    if (hp <= 0) isAlive = false;
+    return before - hp;
+  }
+}
+
 /// 하나의 전투 상태. Flutter/Flame 모두 이 상태만 바라본다 (RPT-126).
 class BattleState {
   BattleState({
@@ -140,7 +184,26 @@ class BattleState {
        monsterHp = stage.wave.isEmpty ? stage.monsterHp : stage.wave.first.hp,
        monsterMaxHp =
            stage.wave.isEmpty ? stage.monsterHp : stage.wave.first.hp,
-       bossCountdown = stage.bossCountdown;
+       bossCountdown = stage.bossCountdown {
+
+    // 2페이즈 구조: 페이즈1에 몬스터 3마리 배치
+    if (stage.wave.isNotEmpty && stage.wave.length >= 3) {
+      final zones = [ColumnZone.left, ColumnZone.middle, ColumnZone.right];
+      for (var i = 0; i < 3 && i < stage.wave.length; i++) {
+        final slot = MonsterSlot(monster: stage.wave[i], zone: zones[i]);
+        slot.initHp();
+        monsterSlots.add(slot);
+      }
+    } else if (stage.wave.isNotEmpty) {
+      final slot = MonsterSlot(monster: stage.wave.first, zone: ColumnZone.middle);
+      slot.initHp();
+      monsterSlots.add(slot);
+    } else {
+      final slot = MonsterSlot(monster: stage.monsterAt(0), zone: ColumnZone.middle);
+      slot.initHp();
+      monsterSlots.add(slot);
+    }
+  }
 
   final StageConfig stage;
   final HeroRoster party;
@@ -154,6 +217,12 @@ class BattleState {
 
   /// 현재 등장 중인 몬스터 인덱스 (0-based). [advanceMonster] 가 +1 한다.
   int monsterIndex = 0;
+
+  /// 스테이지 페이즈 (1: 몬스터 3마리, 2: 보스)
+  StagePhase stagePhase = StagePhase.phase1;
+
+  /// 몬스터 슬롯 목록 — 페이즈1: 3마리(좌/중/우), 페이즈2: 보스 1마리
+  final List<MonsterSlot> monsterSlots = [];
 
   /// 폴백용 합산 HP/ATK. 영웅별 스탯이 주입되지 않은 경로에서만 쓴다.
   final int _fallbackHp;
