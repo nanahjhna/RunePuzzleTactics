@@ -214,7 +214,7 @@ class BattleHudRows extends StatelessWidget {
                           monsterCount: s.monsterSlots.length,
                           poisonStacks: s.poisonStacks,
                           poisonPerStack: s.poisonPerStack,
-                          sprite: i == 0 ? sprite : null,
+                          sprite: sprite,
                           isAlive: s.monsterSlots[i].isAlive,
                           zone: s.monsterSlots[i].zone,
                           compact: true,
