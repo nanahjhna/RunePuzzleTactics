@@ -513,6 +513,25 @@ class BattleEngine {
     state.monsterHp = bossSlot.hp;
     state.monsterMaxHp = bossSlot.maxHp;
     state.bossCountdown = state.stage.bossCountdown;
+    // 파도(페이즈1 3마리)를 전멸시킨 보상 — 생존 영웅 회복 + 스킬 1명 충전 대기.
+    // 이 전환은 정확히 1회만 일어나므로 보상도 1회다.
+    _applyWaveKillReward();
+  }
+
+  /// 파도(페이즈) 처치 보상 — 살아있는 영웅 전원 회복 + 스킬 1명 충전 대기.
+  ///
+  /// 스킬을 이미 쓴 살아있는 영웅이 있을 때만 충전 선택을 대기시킨다
+  /// ([BattleState.skillRechargePending]). UI 가 [resolveSkillRecharge] 또는
+  /// [skipSkillRecharge] 로 해제한다. [BattleState.waveKillSerial] 을 올려
+  /// 화면이 보상을 **한 번만** 처리하게 한다.
+  void _applyWaveKillReward() {
+    var healed = 0;
+    for (final unit in state.livingUnits) {
+      healed += unit.heal((unit.maxHp * waveHealRatio).round());
+    }
+    state.waveKillHeal = healed;
+    state.skillRechargePending = state.skillRechargeCandidates.isNotEmpty;
+    state.waveKillSerial++;
   }
 
   /// 살아있는 영웅 중 1명을 **균등 랜덤**으로 고른다.

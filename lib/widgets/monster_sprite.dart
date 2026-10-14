@@ -74,7 +74,7 @@ class _MonsterSpriteState extends State<MonsterSprite>
   void initState() {
     super.initState();
     final s = widget.battle.state;
-    _lastHp = s.monsterHp;
+    _lastHp = _monsterHp(s);
     _frames = {
       for (final s in ['idle', 'attack', 'damage', 'death'])
         s: List.generate(
@@ -115,21 +115,33 @@ class _MonsterSpriteState extends State<MonsterSprite>
 
   // ── 상황 판정 ──
 
+  /// 스프라이트가 따라갈 **현재 몬스터 HP**.
+  ///
+  /// 피해는 [MonsterSlot] 에만 쌓이고 `state.monsterHp` 필드는 갱신되지 않는다
+  /// (보스 등장 시 1회만 대입). 그래서 슬롯을 단일 소스로 읽는다.
+  /// - 슬롯 1개(페이즈2 보스 / 레거시 단일): 그 슬롯의 HP
+  /// - 슬롯 3개(페이즈1): 합계 — 공용 스프라이트라 개별 구분은 못 하지만
+  ///   "무언가 맞았다 / 전멸했다"는 정확히 전달된다
+  int _monsterHp(BattleState s) => s.monsterHpTotal;
+
   void _onHud() {
     if (!mounted) return;
     final s = widget.battle.state;
-    final hp = s.monsterHp;
+    final hp = _monsterHp(s);
     final dead = hp <= 0;
     final hurt = hp < _lastHp;
     _lastHp = hp;
 
     if (dead) {
       // 사망 우선: 1회 재생 후 마지막 프레임 유지.
-      _controller.stop();
       if (_cur != 'death') {
         _cur = 'death';
         _frame = 0;
         _playSound(GameSound.monsterDeath);
+        _controller
+          ..stop()
+          ..duration = _durations['death']
+          ..forward(from: 0);
         if (mounted) setState(() {});
       }
       return;

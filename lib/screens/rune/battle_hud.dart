@@ -38,10 +38,16 @@ class BattleStageMetrics {
   /// [maxHeight] = `SafeArea` 안쪽 세로 길이.
   factory BattleStageMetrics.of(double maxHeight) => BattleStageMetrics(
     // 몬스터 스프라이트 — 충분해야 피격/사망 프레임이 읽힌다.
-    monsterSpriteHeight: (maxHeight * 0.20).clamp(72.0, 140.0),
-    // 영웅 초상화 (요구사항 5): 세로로 지나치게 길어 유닛 행이 화면을 다 먹던
-    // 것을 **높이만** 줄인다. 가로는 슬롯 폭 그대로라 종횡비가 살아난다.
-    heroPortraitHeight: (maxHeight * 0.13).clamp(72.0, 108.0),
+    //
+    // 스프라이트는 [AspectRatio] 로 그려져 **높이가 곧 크기**다(높이를 올리면
+    // 폭도 비례해 커진다). 예전 0.20 은 작은 화면에서 슬라임이 손톱만 해져
+    // 피격/사망 프레임의 표정이 안 읽혔으므로 계수와 하한을 함께 올렸다.
+    monsterSpriteHeight: (maxHeight * 0.25).clamp(88.0, 172.0),
+    // 영웅 초상화: 세로로 지나치게 길어 유닛 행이 화면을 다 먹던 것을 한 번
+    // 줄였었는데, 이제 다시 키운다 — 전신 이미지라 슬롯이 낮으면 하반신이
+    // 통째로 잘려 "누구인지"가 얼굴만으로 판별됐다. 가로는 슬롯 폭 그대로라
+    // 종횡비가 살아난다.
+    heroPortraitHeight: (maxHeight * 0.16).clamp(84.0, 132.0),
   );
 
   final double monsterSpriteHeight;
@@ -199,13 +205,13 @@ class BattleHudRows extends StatelessWidget {
             if (s.stagePhase == StagePhase.phase1) ...[
               // 페이즈1: 몬스터 3마리를 가로로 배치 (컴팩트 모드)
               SizedBox(
-                height: metrics.monsterSpriteHeight * 0.55 + 80,
+                height: metrics.monsterSpriteHeight * 0.7 + 80,
                 child: Row(
                   children: [
                     for (var i = 0; i < s.monsterSlots.length; i++)
                       Expanded(
                         child: BattleMonsterPanel(
-                          spriteHeight: metrics.monsterSpriteHeight * 0.35,
+                          spriteHeight: metrics.monsterSpriteHeight * 0.5,
                           monsterHp: s.monsterSlots[i].hp,
                           monsterMaxHp: s.monsterSlots[i].maxHp,
                           weakElement: s.monsterSlots[i].monster.weakElement,
@@ -224,11 +230,19 @@ class BattleHudRows extends StatelessWidget {
                 ),
               ),
             ] else ...[
-              // 페이즈2: 보스 1마리
+              // 페이즈2: 보스 1마리.
+              //
+              // HP 는 반드시 **슬롯**에서 읽는다 — `state.monsterHp` 는 보스 등장
+              // 순간 한 번만 대입되고, 이후 매칭/스킬/독 피해는 슬롯에만 쌓인다.
+              // 낡은 필드를 읽으면 보스 HP 바가 줄지 않아 "데미지가 안 들어간다"로 보인다.
               BattleMonsterPanel(
                 spriteHeight: metrics.monsterSpriteHeight,
-                monsterHp: s.monsterHp,
-                monsterMaxHp: s.monsterMaxHp,
+                monsterHp: s.monsterSlots.isEmpty
+                    ? s.monsterHp
+                    : s.monsterSlots.first.hp,
+                monsterMaxHp: s.monsterSlots.isEmpty
+                    ? s.monsterMaxHp
+                    : s.monsterSlots.first.maxHp,
                 weakElement: s.currentMonster.weakElement,
                 resistElement: s.currentMonster.resistElement,
                 monsterNumber: 1,
@@ -435,14 +449,20 @@ class BattleMonsterPanel extends StatelessWidget {
           ),
         SizedBox(
           height: spriteHeight,
-          child: Opacity(
-            opacity: isAlive ? 1.0 : 0.3,
-            child: ColorFiltered(
-              colorFilter: isAlive
-                  ? const ColorFilter.mode(Colors.transparent, BlendMode.dst)
-                  : const ColorFilter.mode(Colors.grey, BlendMode.saturation),
-              child: sprite ?? const SizedBox.shrink(),
-            ),
+          // 죽은 몬스터는 **완전히 사라진다**. 예전에는 30% 불투명 + 회색 필터로
+          // 남겨 "쓰러졌다"를 표현했는데, 실제로는 회색 유령 이미지가 전투 내내
+          // (페이즈1에서는 한 마리가 죽은 뒤 계속) 그 자리를 차지해 보드와 겹쳐
+          // 보였다. 이제 그 칸만 부드럽게 페이드아웃하고 사라진다 — 높이는 그대로
+          // 두어 3마리 행 정렬과 아래 영웅 행 위치가 흔들리지 않는다.
+          //
+          // HP 바·상성 칩은 남긴다: `HP 0 / 최대` 자체가 "이 칸은 죽었다"를
+          // 계속 알려주므로, 이미지가 없어도 정보가 사라지지 않는다.
+          child: AnimatedOpacity(
+            opacity: isAlive ? 1.0 : 0.0,
+            // 사망 애니메이션(830ms)이 대부분 보인 뒤 사라지도록 페이드를 늘린다.
+            duration: const Duration(milliseconds: 700),
+            curve: Curves.easeIn,
+            child: sprite ?? const SizedBox.shrink(),
           ),
         ),
       ],
@@ -697,7 +717,9 @@ class BattleHeroPortraitHud extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final slotWidth = constraints.maxWidth / total;
-        final size = (slotWidth - 6).clamp(0.0, portraitHeight).toDouble();
+        // 6 → 4: 초상화가 세로로 커진 만큼 가로 여백을 조금 돌려준다. 슬롯 폭이
+        // 4인 파티에서 곧 초상화 폭의 상한이라, 여기서 남긴 픽셀이 그대로 크기가 된다.
+        final size = (slotWidth - 4).clamp(0.0, portraitHeight).toDouble();
         return Row(
           children: [
             for (var i = 0; i < total; i++)
@@ -1185,14 +1207,14 @@ class _HpBar extends StatelessWidget {
       children: [
         Text(
           '$label  $value / $max',
-          style: TextStyle(color: Colors.white70, fontSize: compact ? 10 : 12),
+          style: TextStyle(color: Colors.white70, fontSize: compact ? 9 : 11),
         ),
         SizedBox(height: compact ? 1 : 2),
         UiBar(
           value: fraction,
           fillColor: color,
           trackColor: Colors.black38,
-          height: compact ? 8 : 12,
+          height: compact ? 5 : 9,
         ),
       ],
     );
