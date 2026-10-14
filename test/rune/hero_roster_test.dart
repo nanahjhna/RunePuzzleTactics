@@ -145,8 +145,5 @@ StageConfig _stage() => const StageConfig(
   weakElement: RuneElement.fire,
   resistElement: RuneElement.water,
   bossCountdown: 0,
-  blackSpawnRate: 0.05,
-  maxBlackOnBoard: 6,
-  blackDamage: 10,
   goldReward: 0,
 );

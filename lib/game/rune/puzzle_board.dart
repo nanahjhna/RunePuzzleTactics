@@ -28,25 +28,17 @@ class PuzzleBoard {
 
   PuzzleBoard();
 
-  /// 초기 보드 생성: 초기 3매치 없음 + Black 최대 개수 준수 (RPT-68, RPT-169, RPT-57/58).
-  factory PuzzleBoard.generate({
-    double blackSpawnRate = 0.05,
-    int maxBlackOnBoard = 6,
-    Random? rng,
-  }) {
+  /// 초기 보드 생성: 초기 3매치 없음 (RPT-68, RPT-169).
+  factory PuzzleBoard.generate({Random? rng}) {
     final board = PuzzleBoard();
-    board._fill(
-      blackSpawnRate: blackSpawnRate,
-      maxBlackOnBoard: maxBlackOnBoard,
-      rng: rng,
-    );
+    board._fill(rng: rng);
     return board;
   }
 
   /// 스크립트 보드 생성 (튜토리얼/연출용, RPT-405).
   ///
   /// 문자 표기: F=Fire, G=Grass, W=Water, L=Light, P=Poison,
-  /// B=Black, '.' 또는 기타 = 빈칸.
+  /// '.' 또는 기타 = 빈칸.
   /// 테스트 헬퍼 `boardFromRows`와 동일 규약이다.
   factory PuzzleBoard.fromRows(List<String> rows) {
     final board = PuzzleBoard();
@@ -59,7 +51,6 @@ class PuzzleBoard {
           'W' => const BoardTile.rune(RuneElement.water),
           'L' => const BoardTile.rune(RuneElement.light),
           'P' => const BoardTile.rune(RuneElement.poison),
-          'B' => const BoardTile.rune(RuneElement.black),
           _ => null,
         });
       }
@@ -124,16 +115,8 @@ class PuzzleBoard {
       if (_cells[i]?.rune == element) i,
   ];
 
-  int get blackCount =>
-      _cells.where((t) => t?.rune == RuneElement.black).length;
   int get filledCount => _cells.where((t) => t != null).length;
   bool get isFull => filledCount == size;
-
-  /// Black 타일 인덱스 목록.
-  List<int> get blackIndices => [
-    for (var i = 0; i < size; i++)
-      if (_cells[i]?.rune == RuneElement.black) i,
-  ];
 
   /// Explosion Orb 타일 인덱스 목록 (Fire 영웅 스킬 결과물).
   List<int> get explosionOrbIndices => [
@@ -141,14 +124,14 @@ class PuzzleBoard {
       if (_cells[i]?.isExplosionOrb ?? false) i,
   ];
 
-  /// 인덱스를 Explosion Orb로 변환한다. 빈칸/Black 지정은 무시된다.
+  /// 인덱스를 Explosion Orb로 변환한다. 빈칸 지정은 무시된다.
   ///
-  /// 이미 Orb인 칸은 그대로 둔다(중복 소모 방지).
+  /// 이미 Orb인 칸는 그대로 둔다(중복 소모 방지).
   void markExplosionOrbs(Iterable<int> indices) {
     for (final i in indices) {
       if (i < 0 || i >= size) continue;
       final t = _cells[i];
-      if (t == null || t.rune == RuneElement.black) continue;
+      if (t == null) continue;
       if (t.isExplosionOrb) continue;
       _cells[i] = BoardTile.orb(t.rune);
     }
@@ -179,20 +162,11 @@ class PuzzleBoard {
 
   // ── 초기 생성 ──
 
-  void _fill({
-    required double blackSpawnRate,
-    required int maxBlackOnBoard,
-    Random? rng,
-  }) {
+  void _fill({Random? rng}) {
     final r = rng ?? Random();
     for (var i = 0; i < size; i++) {
       final normals = _matchSafeNormals(i);
-      final canBlack = _isBlackSafe(i) && blackCount < maxBlackOnBoard;
-      if (canBlack && r.nextDouble() < blackSpawnRate) {
-        _cells[i] = const BoardTile.rune(RuneElement.black);
-      } else {
-        _cells[i] = BoardTile.rune(normals[r.nextInt(normals.length)]);
-      }
+      _cells[i] = BoardTile.rune(normals[r.nextInt(normals.length)]);
     }
   }
 
@@ -206,14 +180,5 @@ class PuzzleBoard {
       for (final e in RuneElement.normal)
         if (!(left1 == e && left2 == e) && !(up1 == e && up2 == e)) e,
     ];
-  }
-
-  bool _isBlackSafe(int i) {
-    final left1 = i % cols >= 1 ? _cells[i - 1]?.rune : null;
-    final left2 = i % cols >= 2 ? _cells[i - 2]?.rune : null;
-    final up1 = i >= cols ? _cells[i - cols]?.rune : null;
-    final up2 = i >= 2 * cols ? _cells[i - 2 * cols]?.rune : null;
-    return !(left1 == RuneElement.black && left2 == RuneElement.black) &&
-        !(up1 == RuneElement.black && up2 == RuneElement.black);
   }
 }

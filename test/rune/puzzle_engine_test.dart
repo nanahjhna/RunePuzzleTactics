@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'board_helpers.dart';
 
 void main() {
-  final eng = PuzzleEngine(blackSpawnRate: 0);
+  final eng = PuzzleEngine();
 
   group('매치 / Swap', () {
     test('Swap으로 3매치 생성 → 1파도 해석 + 보드 완전 (RPT-76~79)', () {
@@ -72,7 +72,6 @@ void main() {
         to: idx(board, 1, 5),
       );
       expect(result.waves.length, greaterThanOrEqualTo(2));
-      expect(result.waves.first.hasNormalMatch, isTrue);
       expect(result.waves.first.combo, 1);
       expect(result.waves[1].combo, 2); // 두 번째 파도 = Combo 2
     });
@@ -117,7 +116,6 @@ void main() {
       final result = eng.removeAndCascade(board, <int>{});
       final w1 = result.waves.first;
       expect(w1.runs.single.length, 4);
-      expect(w1.runs.single.isBlack, isFalse);
       // 폭발 중심 = cells[3] = (3,5) → 3×3에 (2,4),(3,4),(4,4) 포함
       expect(w1.removedCells.contains(idx(board, 2, 4)), isTrue);
       expect(w1.removedCells.contains(idx(board, 3, 4)), isTrue);
@@ -125,35 +123,15 @@ void main() {
     });
   });
 
-  group('Combo / Ultimate Charge (RPT-85~88, RPT-124~126)', () {
-    test('Black-only 파도는 Combo/Gauge 증가 없음', () {
-      final board = boardFromRows(cleanRows);
-      board.setIndex(idx(board, 0, 5), rune(RuneElement.black));
-      board.setIndex(idx(board, 1, 5), rune(RuneElement.black));
-      board.setIndex(idx(board, 2, 5), rune(RuneElement.black));
-      final result = eng.removeAndCascade(board, <int>{});
-      final w1 = result.waves.first;
-      expect(w1.hasNormalMatch, isFalse);
-      expect(w1.hasBlackMatch, isTrue);
-      expect(w1.combo, 0);
-    });
-
-    test('Mixed Wave: Normal + Black 동시 처리, Gauge는 Normal만 (RPT-125)', () {
+  group('Combo (RPT-85~88, RPT-124~126)', () {
+    test('Normal 파도는 Combo 증가', () {
       final board = boardFromRows(cleanRows);
       board.setIndex(idx(board, 0, 5), rune(RuneElement.fire));
       board.setIndex(idx(board, 1, 5), rune(RuneElement.fire));
       board.setIndex(idx(board, 2, 5), rune(RuneElement.fire));
-      board.setIndex(idx(board, 3, 5), rune(RuneElement.black));
-      board.setIndex(idx(board, 4, 5), rune(RuneElement.black));
-      board.setIndex(idx(board, 5, 5), rune(RuneElement.black));
-
       final result = eng.removeAndCascade(board, <int>{});
       final w1 = result.waves.first;
-      expect(w1.hasNormalMatch, isTrue);
-      expect(w1.hasBlackMatch, isTrue);
       expect(w1.combo, 1);
-      expect(w1.normalMatchedTiles, 3);
-      expect(w1.blackMatchedTiles, 3);
     });
   });
 }

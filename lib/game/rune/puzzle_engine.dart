@@ -1,6 +1,6 @@
 /// 순수 Dart 퍼즐 엔진 (RPT-79 ~ RPT-82, RPT-114 ~ RPT-131)
 ///
-/// Animation/UI에 의존하지 않고 Match/Cascade/Special/Black을 계산한다.
+/// Animation/UI에 의존하지 않고 Match/Cascade/Special을 계산한다.
 /// Resolve-first / Animate-second 원칙의 계산 계층 (RPT-112, RPT-116, RPT-132).
 library;
 
@@ -11,7 +11,7 @@ import 'dart:math';
 import 'puzzle_board.dart';
 import 'rune_element.dart';
 
-/// Black Match 발생 원인 (RPT-49, RPT-52)
+/// Match 발생 원인 (RPT-49, RPT-52)
 enum MatchSource { direct, cascade }
 
 /// 한 번의 Swap 입력.
@@ -31,7 +31,6 @@ class MatchRun {
   final bool horizontal;
 
   int get length => cells.length;
-  bool get isBlack => element.isBlack;
 }
 
 /// 한 Cascade Wave의 결과.
@@ -41,7 +40,6 @@ class WaveResult {
     required this.combo,
     required this.runs,
     required this.removedCells,
-    required this.purgedBlackCells,
     this.boardAfter,
   });
 
@@ -50,28 +48,17 @@ class WaveResult {
 
   /// 이 Wave의 Combo 값.
   ///
-  /// **Normal 매칭이 없으면 증가하지 않는다**(RPT-124 ~ RPT-126). Normal 매칭이 있으면
   /// 이번 Wave 에서 맞힌 **서로 다른 색의 수**만큼 오른다 — 한 턴에 두 색을 맞추면
-  /// 2콤보다(요구사항 7). Black 매칭은 피해 0 이므로 올리지 않는다.
+  /// 2콤보다(요구사항 7).
   final int combo;
 
   final List<MatchRun> runs;
   final Set<int> removedCells;
 
-  /// 정화(Line Purge / All Black Purge)로 제거된 Black (피해 없음, RPT-53/55/127).
-  final Set<int> purgedBlackCells;
-
   /// 이 Wave 해석(제거+중력+리필) 직후의 보드 상태.
   /// UI(Flame)가 연쇄 파도별로 "플래시→낙하→대기"를 재생할 때
   /// 중간 배치를 그릴 수 있도록 제공한다 (RPT-116 개편).
   final PuzzleBoard? boardAfter;
-
-  bool get hasNormalMatch => runs.any((r) => !r.isBlack);
-  bool get hasBlackMatch => runs.any((r) => r.isBlack);
-  int get normalMatchedTiles =>
-      runs.where((r) => !r.isBlack).fold(0, (s, r) => s + r.length);
-  int get blackMatchedTiles =>
-      runs.where((r) => r.isBlack).fold(0, (s, r) => s + r.length);
 }
 
 /// 하나의 퍼즐 입력에 대한 전체 Cascade 결과.
@@ -89,17 +76,9 @@ class CascadeResult {
 }
 
 class PuzzleEngine {
-  PuzzleEngine({
-    Random? rng,
-    double blackSpawnRate = 0.05,
-    int maxBlackOnBoard = 6,
-  }) : _rng = rng ?? Random(),
-       _blackSpawnRate = blackSpawnRate,
-       _maxBlackOnBoard = maxBlackOnBoard;
+  PuzzleEngine({Random? rng}) : _rng = rng ?? Random();
 
   final Random _rng;
-  final double _blackSpawnRate;
-  final int _maxBlackOnBoard;
 
   /// 현재 보드의 매치 검출 (테스트/UI 하이라이트용 공개 API).
   List<MatchRun> findMatches(PuzzleBoard board) => _detectMatches(board);
@@ -250,28 +229,15 @@ class PuzzleEngine {
       final waveCombo = combo;
 
       final removed = <int>{};
-      final purgedBlack = <int>{};
 
       for (final m in matches) {
         removed.addAll(m.cells);
 
-        if (m.isBlack) {
-          // Black 4: Black Damage + Line Purge (RPT-52 ~ RPT-54, RPT-197)
-          if (m.length == 4) {
-            final purge = _lineBlackCells(board, m)..removeAll(m.cells);
-            removed.addAll(purge);
-            purgedBlack.addAll(purge);
-          } else if (m.length >= 5) {
-            // Black 5: 피해 0 + 전체 Black 정화 (RPT-55, RPT-128, RPT-296)
-            final allBlack = board.blackIndices.toSet();
-            removed.addAll(allBlack);
-            purgedBlack.addAll(allBlack.difference(m.cells.toSet()));
-          }
-        } else if (m.length == 4) {
+        if (m.length == 4) {
           // Normal 4: Explosion Orb → 3×3 제거 (RPT-69 ~ RPT-72)
           removed.addAll(_area3x3(board, m.cells[3]));
         }
-        // Normal 5+: 특수 오브 없음 (Rainbow Orb 제거됨) — 매치된 타일만 제거.
+        // Normal 5+: 특수 오브 없음 — 매치된 타일만 제거.
 
         // Fire 스킬이 부여한 Explosion Orb가 매칭에 포함되면 3×3 추가 제거.
         // 오브 칸이 run 어디에 있든 해당 칸을 중심으로 확장한다.
@@ -292,7 +258,6 @@ class PuzzleEngine {
           combo: waveCombo,
           runs: matches,
           removedCells: removed,
-          purgedBlackCells: purgedBlack,
           boardAfter: board.clone(),
         ),
       );
@@ -308,18 +273,15 @@ class PuzzleEngine {
 
   /// 이 Wave에서 상승하는 콤보량 (요구사항 7).
   ///
-  /// 예전엔 "Normal 매칭이 하나라도 있으면 +1" 이라 한 턴에 두 색을 동시에 맞춰도
-  /// 1콤보로만 올라갔다 — 플레이어는 "한 번에 몇 개를 맞출수록 커진다"는 규칙을
-  /// 배울 수 없었다. 이제는 **이번 Wave 에서 맞힌 색 수만큼** 오른다.
+  /// **이번 Wave 에서 맞힌 색 수만큼** 오른다.
   ///
   /// 단, 같은 색 런이 여러 개면 **색 1개**로 센다. L/T 모양은 가로 런과 세로 런으로
   /// 두 번 잡히지만 플레이어 관점엔 한 덩어리라 1콤보가 맞다. 그래서 런 개수가 아니라
-  /// **중복 없는 속성 수**를 센다. Black 매칭은 피해 0 이므로 콤보도 올리지 않는다.
+  /// **중복 없는 속성 수**를 센다.
   int _comboGain(List<MatchRun> matches) {
     var gain = 0;
     final counted = <RuneElement>{};
     for (final m in matches) {
-      if (m.isBlack) continue;
       if (counted.add(m.element)) gain++;
     }
     return gain;
@@ -405,43 +367,17 @@ class PuzzleEngine {
     }
   }
 
-  /// Refill: 빈 칸을 채우고 Black은 maxBlackOnBoard를 준수한다 (RPT-57/58, RPT-170).
+  /// Refill: 빈 칸을 정상 Rune으로 채운다 (RPT-170).
   void _refill(PuzzleBoard board) {
     for (var i = 0; i < PuzzleBoard.size; i++) {
       if (board.cell(i) != null) continue;
-      final canBlack =
-          board.blackCount < _maxBlackOnBoard &&
-          _rng.nextDouble() < _blackSpawnRate;
-      if (canBlack) {
-        board.setIndex(i, const BoardTile.rune(RuneElement.black));
-      } else {
-        board.setIndex(
-          i,
-          BoardTile.rune(
-            RuneElement.normal[_rng.nextInt(RuneElement.normal.length)],
-          ),
-        );
-      }
+      board.setIndex(
+        i,
+        BoardTile.rune(
+          RuneElement.normal[_rng.nextInt(RuneElement.normal.length)],
+        ),
+      );
     }
-  }
-
-  /// Black 4 매치 Line 정화 대상: 같은 행/열의 다른 Black (RPT-52 ~ RPT-54).
-  Set<int> _lineBlackCells(PuzzleBoard board, MatchRun m) {
-    final result = <int>{};
-    if (m.horizontal) {
-      final y = m.cells.first ~/ PuzzleBoard.cols;
-      for (var x = 0; x < PuzzleBoard.cols; x++) {
-        final i = board.indexAt(x, y);
-        if (board.cell(i)?.rune == RuneElement.black) result.add(i);
-      }
-    } else {
-      final x = m.cells.first % PuzzleBoard.cols;
-      for (var y = 0; y < PuzzleBoard.rows; y++) {
-        final i = board.indexAt(x, y);
-        if (board.cell(i)?.rune == RuneElement.black) result.add(i);
-      }
-    }
-    return result;
   }
 
   /// 중심 셀 주변 3×3 영역 (RPT-70).

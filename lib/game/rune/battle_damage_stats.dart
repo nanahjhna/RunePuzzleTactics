@@ -10,7 +10,6 @@ enum BattleDamageSource {
 
   /// 독 스택 지속 피해 (매 몬스터 턴 틱).
   poisonTick,
-  blackRune,
   monsterAttack,
   bossUltimate,
 }
@@ -35,7 +34,6 @@ class BattleDamageRecord {
   final int? hpMax;
 
   bool get isIncoming =>
-      source == BattleDamageSource.blackRune ||
       source == BattleDamageSource.monsterAttack ||
       source == BattleDamageSource.bossUltimate;
 }

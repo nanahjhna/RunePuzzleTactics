@@ -1254,7 +1254,7 @@ class RuneProgress {
     if (raw is Map) {
       for (final entry in raw.entries) {
         final e = RuneElement.values
-            .where((x) => x.name == entry.key && x.isNormal)
+            .where((x) => x.name == entry.key)
             .firstOrNull;
         if (e != null) map[e] = (entry.value as num?)?.toInt() ?? 0;
       }

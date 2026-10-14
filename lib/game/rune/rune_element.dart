@@ -1,6 +1,6 @@
 /// Rune Puzzle Tactics — Rune 요소 정의.
 ///
-/// 총 6종 Rune (Fire/Grass/Water/Lightning/Poison + Black Hazard)
+/// 총 5종 Rune (Fire/Grass/Water/Lightning/Poison)
 ///
 /// **속성의 역할**
 /// - 속성은 **영웅과 룬**에만 있다. 몬스터는 무속성이므로 "누가 누구를 이긴다"의
@@ -18,14 +18,12 @@ library;
 /// 퍼즐/배틀에서 사용하는 Rune 종류.
 ///
 /// - [fire] ~ [poison]: 공격 Rune 5종
-/// - [black]: Hazard Rune. 공격 원소가 아니며 상성 판정에 들어가지 않는다.
 enum RuneElement {
   fire('🔥', 'Fire', 0xFFFF5722, 18),
   grass('🌿', 'Grass', 0xFF4CAF50, 270),
   water('💧', 'Water', 0xFF2196F3, 350),
   light('⚡', 'Lightning', 0xFFFFC107, 188),
-  poison('☠️', 'Poison', 0xFF9C27B0, 104),
-  black('◼️', 'Black', 0xFF16162B, 429);
+  poison('☠️', 'Poison', 0xFF9C27B0, 104);
 
   const RuneElement(this.emoji, this.label, this.argb, this.spriteSrcX);
 
@@ -52,12 +50,6 @@ enum RuneElement {
   static const double runeSpriteHeight = 59;
   static const double runeSpriteIconWidth = 54;
   static const double runeSpriteIconHeight = 59;
-
-  /// Black은 정상 원소가 아니라 붕괴된 Rune Flow의 잔재.
-  bool get isBlack => this == RuneElement.black;
-
-  /// 공격 Rune 여부 (Black 제외).
-  bool get isNormal => !isBlack;
 
   /// 공격 Rune 5종.
   static const List<RuneElement> normal = [

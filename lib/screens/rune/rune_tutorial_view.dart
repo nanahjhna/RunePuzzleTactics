@@ -68,6 +68,16 @@ class _RuneTutorialViewState extends State<RuneTutorialView> {
   bool _advancing = false;
   bool _skipDialogOpen = false;
 
+  /// 유도선이 화면에 뜨고 손가락 시연이 한 바퀴 돈 뒤 강제 스와이프가 실행될 때까지의 초.
+  ///
+  /// 너무 짧으면 "어디를 미는 거지"를 읽기 전에 룬이 움직여 버리고, 길면 배움이
+  /// 되기 전에 지루해진다. 안내 카드 + 점선 유도선 + 시연을 읽을 최소 시간.
+  static const double _guideDelay = 2.4;
+
+  /// 유도 모드에서 다른 수를 시도했을 때 잠깐 보여줄 재안내 문구.
+  String? _retryHint;
+  Timer? _retryTimer;
+
   /// HUD 위젯([BattleHudRows])이 **생성자 인자로 캡처**하는 값들의 마지막 스냅샷.
   ///
   /// [BattleHudRows] 는 내부에서 `_hud` 를 구독해 스스로 다시 그리지만,
@@ -107,6 +117,7 @@ class _RuneTutorialViewState extends State<RuneTutorialView> {
 
   @override
   void dispose() {
+    _retryTimer?.cancel();
     _hud.dispose();
     super.dispose();
   }
@@ -141,6 +152,16 @@ class _RuneTutorialViewState extends State<RuneTutorialView> {
     // 보드 위에 "어느 룬을 어느 방향으로 미는지"를 시각화한다(좌표 텍스트만으로는
     // 그 칸을 눈으로 찾아야 한다). 플레이어가 조작을 시작하면 게임이 스스로 숨긴다.
     game.setHintMove(spec.hintMove);
+    // 유도 모드: 지정된 수만 허용하고, 자동으로 그 수를 실행한다.
+    // 스킬 섹션처럼 보드 조작을 가르치지 않는 구간은 spec.autoSwapMove 가 null 이라
+    // 강제 스와이프도 예약되지 않고 보드 입력 제한도 걸리지 않는다.
+    game
+      ..onWrongMove = _onWrongMove
+      ..setTutorialGuide(
+        enabled: true,
+        requiredMove: spec.hintMove,
+        autoDelay: _guideDelay,
+      );
 
     if (!mounted) return;
     setState(() {
@@ -185,6 +206,23 @@ class _RuneTutorialViewState extends State<RuneTutorialView> {
       HapticFeedback.lightImpact();
     }
     _audioService.playEffect(GameSound.match);
+  }
+
+  /// 시연하지 않은 수를 시도했을 때의 재안내.
+  ///
+  /// **벌점은 주지 않는다** — 엔진 상태가 이미 원위치로 되돌아가 있으므로 여기서는
+  /// "이렇게 해요" 한 줄만 잠깐 보여주고 유도선을 다시 세운다. 게임 안에서는
+  /// 조작이 먹지 않은 것조차 알아채기 어렵게 해야 재시도 비용이 생기지 않는다.
+  void _onWrongMove(PuzzleMove move) {
+    if (!mounted) return;
+    final l10n = LanguageScope.of(context).strings;
+    setState(() => _retryHint = l10n.tr('tutorial_retry_hint'));
+    HapticFeedback.selectionClick();
+    _retryTimer?.cancel();
+    _retryTimer = Timer(const Duration(milliseconds: 1800), () {
+      if (!mounted) return;
+      setState(() => _retryHint = null);
+    });
   }
 
   void _maybeAdvance(TutorialSection spec, BattleEngine battle) {
@@ -473,6 +511,19 @@ class _RuneTutorialViewState extends State<RuneTutorialView> {
                       color: AppColors.blue,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+                // 시연하지 않은 수를 시도했을 때의 재안내. 보드 위 유도선은
+                // 이미 다시 켜졌으므로 여기서는 "이렇게 해요" 한 줄만 덧붙인다.
+                if (_retryHint case final msg?) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    msg,
+                    style: const TextStyle(
+                      color: AppColors.accentGold,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ],

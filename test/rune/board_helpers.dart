@@ -1,6 +1,6 @@
 /// Rune Puzzle 테스트 공용 헬퍼 (테스트 전용).
 ///
-/// 문자 표기: F=Fire, G=Grass, W=Water, L=Light, P=Poison, B=Black, .=빈칸
+/// 문자 표기: F=Fire, G=Grass, W=Water, L=Light, P=Poison, .=빈칸
 library;
 
 import 'dart:math';
@@ -19,7 +19,6 @@ PuzzleBoard boardFromRows(List<String> rows) {
         'W' => const BoardTile.rune(RuneElement.water),
         'L' => const BoardTile.rune(RuneElement.light),
         'P' => const BoardTile.rune(RuneElement.poison),
-        'B' => const BoardTile.rune(RuneElement.black),
         _ => null,
       };
       board.setIndex(board.indexAt(x, y), tile);
@@ -50,7 +49,6 @@ String _char(RuneElement e) => switch (e) {
   RuneElement.water => 'W',
   RuneElement.light => 'L',
   RuneElement.poison => 'P',
-  RuneElement.black => 'B',
 };
 
 /// 3매치가 없는 깨끗한 6×6 보드 (엔진 테스트 기반).
@@ -76,9 +74,6 @@ StageConfig testStage({
   RuneElement weakElement = RuneElement.fire,
   RuneElement resistElement = RuneElement.water,
   int bossCountdown = 0,
-  double blackSpawnRate = 0.05,
-  int maxBlackOnBoard = 6,
-  int blackDamage = 10,
   int goldReward = 100,
 }) {
   return StageConfig(
@@ -89,9 +84,6 @@ StageConfig testStage({
     weakElement: weakElement,
     resistElement: resistElement,
     bossCountdown: bossCountdown,
-    blackSpawnRate: blackSpawnRate,
-    maxBlackOnBoard: maxBlackOnBoard,
-    blackDamage: blackDamage,
     goldReward: goldReward,
   );
 }
@@ -107,11 +99,7 @@ BattleEngine battleWithBoard({
 }) {
   final s = stage ?? testStage();
   final r = roster ?? HeroRoster.initial();
-  final engine = PuzzleEngine(
-    rng: rng,
-    blackSpawnRate: s.blackSpawnRate,
-    maxBlackOnBoard: s.maxBlackOnBoard,
-  );
+  final engine = PuzzleEngine(rng: rng);
   final state = BattleState(
     stage: s,
     party: r,
@@ -123,6 +111,5 @@ BattleEngine battleWithBoard({
     state: state,
     engine: engine,
     damageCalc: const DamageCalculator(),
-    blackCalc: BlackDamageCalculator(),
   );
 }

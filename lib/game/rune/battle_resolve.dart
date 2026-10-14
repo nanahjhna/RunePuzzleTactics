@@ -9,9 +9,8 @@
 /// 1. cascadeSteps          유저 Swap → 룬 Match → Drop/Refill (Cascade 콤보)
 /// 2. heroSkillEvents       플레이어가 발동한 영웅 스킬 연출 이벤트
 /// 3. playerDamageEvent     콤보 + 속성 시너지 최종 타격 데미지
-/// 4. blackRuneDamageEvent  Black 룬 매칭에 의한 파티 피해 (발생 시)
-/// 5. monsterAttackEvent    몬스터 반격 카운트 0 도달 시 반격 연출
-/// 6. finalState            위 모든 과정이 반영된 최종 BattleState 스냅샷
+/// 4. monsterAttackEvent    몬스터 반격 카운트 0 도달 시 반격 연출
+/// 5. finalState            위 모든 과정이 반영된 최종 BattleState 스냅샷
 /// ```
 library;
 
@@ -45,7 +44,7 @@ class HeroSkillEvent {
   /// 효과 수치 (피해량/회복량/연장초/변환 칸 수 등). 효과에 따라 0일 수 있다.
   final int amount;
 
-  /// 보드 영향 칸(폭발 오브 변환 칸, 정화된 Black 칸 등).
+  /// 보드 영향 칸(폭발 오브 변환 칸 등).
   final Set<int> cells;
 
   @override
@@ -53,13 +52,10 @@ class HeroSkillEvent {
       'HeroSkillEvent(${element.name}/${effect.name} hero=$heroId amt=$amount)';
 }
 
-/// 데미지 1건의 출처 ([BattleResolveResult.monsterHits] / [partyHits] 항목).
+/// 데미지 1건의 출처 ([BattleResolveResult.monsterHits] 항목).
 enum DamageSource {
   /// 일반 매칭 1그룹 (칸 3~5개).
   match,
-
-  /// Black 룬 매칭 (파티 피해, 매칭 개수 5 이상이면 피해 0).
-  blackMatch,
 
   /// 영웅 스킬 즉시 피해 (Water/Grass 등).
   heroSkill,
@@ -88,7 +84,6 @@ class DamageHit {
     this.combo = 1,
     this.weaknessHit = false,
     this.affinityMultiplier = 1,
-    this.heroId,
     this.noElementHero = false,
   }) : cells = List.unmodifiable(cells),
        assert(damage >= 0, 'damage는 음수가 될 수 없다');
@@ -98,15 +93,8 @@ class DamageHit {
   /// 공격에 사용한 원소.
   final RuneElement element;
 
-  /// 확정 데미지. 피해 0인 경우(Black 5+)도 0으로 기록한다.
+  /// 확정 데미지.
   final int damage;
-
-  /// **피해를 받은 영웅** id (파티 피해 항목 전용).
-  ///
-  /// Black 룬 피해는 살아있는 영웅 중 랜덤 1명에게 들어간다. 연출이 이 id 로
-  /// 해당 초상화만 반응하면 "누가 맞았는지"를 읽을 수 있다. 몬스터 반격은
-  /// 별도 이벤트([MonsterAttackEvent.targetHeroId])를 쓴다.
-  final String? heroId;
 
   /// 캐스케이드 파도 번호(1부터). 직접 타격은 0.
   final int waveNumber;
@@ -198,9 +186,6 @@ class MonsterAttackEvent {
 
 /// 영웅이 **피해를 입은** 출처 ([HeroDamageEvent.source]).
 enum HeroDamageSource {
-  /// Black 룬 매칭 — 캐스케이드 파도 중에 발생.
-  blackRune,
-
   /// 몬스터 반격 — 살아있는 영웅 1명에게 들어간다.
   monsterAttack,
 
@@ -214,8 +199,8 @@ enum HeroDamageSource {
 /// 이건 "그 영웅의 HP 가 N 만큼 실제로 줄었다" 라는 **확정** 레벨이다.
 /// 아래 두 값을 구분하지 않으면 연출 숫자가 HP 바 델타와 어긋난다:
 ///
-/// - [DamageHit.damage] 는 HP 차감 **전 예측값**이고, [_applyPartyHits] 는
-///   대상이 먼저 쓰러졌으면 살아있는 영웅으로 **대체**한다.
+/// - [DamageHit.damage] 는 HP 차감 **전 예측값**이고, 대상이 먼저 쓰러졌으면
+///   살아있는 영웅으로 **대체**한다.
 /// - 몬스터 반격도 잔여 HP 가 피해보다 작으면 초과분이 evaporate 된다.
 ///
 /// 그래서 값의 출처를 [PartyHeroUnit.applyDamage] 반환값("실제로 깎인 HP")으로
@@ -242,8 +227,7 @@ class HeroDamageEvent {
   final HeroDamageSource source;
 
   /// 피해를 입은 속성. 몬스터 반격은 몬스터의 공격 속성(보스의 경우
-  /// [BattleSnapshot] 단계에서 이미 확정된 스테이지 속성), 블랙 룬은 매칭된
-  /// Black 속성. 무속성 몬스터 공격이면 null 이다.
+  /// [BattleSnapshot] 단계에서 이미 확정된 스테이지 속성). 무속성 몬스터 공격이면 null 이다.
   final RuneElement? element;
 
   /// 이 피해가 발생한 캐스케이드 파도 번호(1부터, 직접 타격은 0).
@@ -317,26 +301,23 @@ enum BattleResolveOutcome {
 /// **유저 1회 Swap에 대한 단일 결과 객체** (사양 결정 5).
 ///
 /// Flame은 [cascadeSteps] → [heroSkillEvents] → [playerDamage] →
-/// [blackRuneDamage] → [monsterAttackEvent] → [finalState] 순서로 재생만 한다.
+/// [monsterAttackEvent] → [finalState] 순서로 재생만 한다.
 class BattleResolveResult {
   BattleResolveResult({
     required this.outcome,
     required List<WaveResult> cascadeSteps,
     required List<HeroSkillEvent> heroSkillEvents,
     required this.playerDamage,
-    required this.blackRuneDamage,
     required this.monsterAttackEvent,
     required this.finalState,
     required this.board,
     List<WaveResult> heroSkillWaves = const [],
     List<DamageHit> monsterHits = const [],
-    List<DamageHit> partyHits = const [],
     List<HeroDamageEvent> heroDamageEvents = const [],
   }) : cascadeSteps = List.unmodifiable(cascadeSteps),
        heroSkillEvents = List.unmodifiable(heroSkillEvents),
        heroSkillWaves = List.unmodifiable(heroSkillWaves),
        monsterHits = List.unmodifiable(monsterHits),
-       partyHits = List.unmodifiable(partyHits),
        heroDamageEvents = List.unmodifiable(heroDamageEvents);
 
   /// 결과 분류.
@@ -350,7 +331,7 @@ class BattleResolveResult {
 
   /// 영웅 스킬이 보드를 변형해 유발한 캐스케이드 파도.
   ///
-  /// Water 스킬(Black 정화)이 빈칸 → 낙하 → 리필 → 연쇄 매치로 이어질 때
+  /// 독 스킬이 빈칸 → 낙하 → 리필 → 연쇄 매치로 이어질 때
   /// 발생한다. [cascadeSteps] 와 분리해 두어 Flame이
   /// "영웅 스킬 → 후속 캐스케이드" 순서로 재생하게 한다.
   final List<WaveResult> heroSkillWaves;
@@ -358,13 +339,10 @@ class BattleResolveResult {
   /// 3) 유저 최종 타격 데미지 (콤보 + 속성 시너지 반영 합계).
   final int playerDamage;
 
-  /// 4) Black 룬으로 파티가 받은 피해 (발생 시 0 초과).
-  final int blackRuneDamage;
-
-  /// 5) 몬스터 반격 (미발생 시 null).
+  /// 4) 몬스터 반격 (미발생 시 null).
   final MonsterAttackEvent? monsterAttackEvent;
 
-  /// 6) 최종 상태 스냅샷.
+  /// 5) 최종 상태 스냅샷.
   final BattleSnapshot finalState;
 
   /// 해석이 끝난 보드(Flame이 이 상태로 리셋/리필 표시).
@@ -379,16 +357,9 @@ class BattleResolveResult {
   /// 항상 일치한다 (연출이 총합을 재계산할 필요가 없다).
   final List<DamageHit> monsterHits;
 
-  /// Black 룬 매칭으로 파티가 받은 피해 **1건씩**.
+  /// **실제로 HP 를 잃은 영웅** 1건씩 — 두 출처(몬스터 반격 / 보스 궁극기)를
+  /// 전부 한 리스트로 모은다.
   ///
-  /// 몬스터 반격([monsterAttackEvent])은 별도 이벤트로 분리한다 — 둘을 합치면
-  /// "Black 10 + 반격 13 = 23" 을 23 하나로 보여줘 피해 출처를 알 수 없다.
-  final List<DamageHit> partyHits;
-
-  /// **실제로 HP 를 잃은 영웅** 1건씩 — 세 출처(블랙 룬 / 몬스터 반격 /
-  /// 보스 궁극기)를 전부 한 리스트로 모은다.
-  ///
-  /// [partyHits] 가 "Black 룬이 몇을 때렸나" 라는 **피해 예측** 레벨이고
   /// [monsterAttackEvent] 가 "몬스터가 반격했다" 는 **총량** 레벨인 것과 달리,
   /// 이건 영웅 1명 1건의 **확정 차감**이다. 초상화 연출(피격 이미지 + 숫자)은
   /// 오직 이 리스트를 보고 재생한다 — 그래야 "얼굴 밑 숫자 = HP 바가 줄어난 양"
@@ -409,15 +380,12 @@ class BattleResolveResult {
   /// 실제로 그만큼 깎였으니 합계가 총 피해와 어긋나면 안 된다.
   int get summedMonsterDamage => monsterHits.fold(0, (s, h) => s + h.damage);
 
-  /// [partyHits] 합계.
-  int get summedPartyDamage => partyHits.fold(0, (s, h) => s + h.damage);
-
-  /// 총 타격량(플레이어 데미지 + 몬스터가 받은 부수 피해 합).
+  /// 총 타격량(플레이어 데미지).
   int get totalDamage => playerDamage;
 
   @override
   String toString() =>
       'BattleResolveResult(${outcome.name} waves=${cascadeSteps.length} '
-      'skills=${heroSkillEvents.length} dmg=$playerDamage black=$blackRuneDamage '
+      'skills=${heroSkillEvents.length} dmg=$playerDamage '
       'monsterAtk=${monsterAttackEvent?.damage})';
 }

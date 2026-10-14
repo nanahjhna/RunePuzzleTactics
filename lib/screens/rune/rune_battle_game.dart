@@ -228,6 +228,27 @@ class RuneBattleGame extends FlameGame {
   /// 플레이어가 조작을 시작하면 true — 섹션 목표를 달성할 때까지 힌트를 숨긴다.
   bool _hintDismissed = false;
 
+  /// **튜토리얼 유도 모드** — 정해진 수([_requiredMove])만 허용하고 나머지는 막는다.
+  ///
+  /// 실제 전투와 같은 입력 경로를 쓰되, 튜토리얼은 "배워야 할 한 가지"만 시킨다.
+  /// 여기서 막는 건 **보드 조작**뿐이라 스킬 섹션(초상화 탭)처럼 [_requiredMove] 가
+  /// null 인 구간은 보드 입력을 그대로 허용한다.
+  bool _tutorialGuided = false;
+
+  /// 유도 모드에서 유일하게 허용되는 스왑. null 이면 보드 입력 제한이 없다.
+  PuzzleMove? _requiredMove;
+
+  /// 강제 스와이프(auto-swipe) 발까지 남은 초. 음수면 예약 없음.
+  ///
+  /// 뷰가 [setTutorialGuide] 를 호출하면서 세운다 — 플레이어가 안내 카드를 읽을
+  /// 시간을 남긴 뒤 손 대신 스왑이 실행된다.
+  double _guideTimer = -1;
+
+  /// 플레이어가 유도 모드의 **다른 수**를 시도했을 때 발화한다.
+  ///
+  /// 뷰가 "이렇게 해요" 재안내로 쓰고, 엔진/게임 상태는 건드리지 않는다.
+  ValueChanged<PuzzleMove>? onWrongMove;
+
   /// 드래그 최근 보드 로컬 위치 (보드 밖 오버슛 시 인접 보정용).
   Vector2? _lastDragLocal;
 
@@ -241,12 +262,6 @@ class RuneBattleGame extends FlameGame {
   static const double _cascadePauseDur = 0.4; // 연쇄 사이 배치 확인 대기
   static const double _resultRevealDur = 0.9; // 결과(스킬/합계/반격) 체류
   static const double _shuffleFadeDur = 0.5; // 보드 재배열 페이드 연출
-
-  /// 보드 플로터(Black 매칭) 1파도당 상한.
-  ///
-  /// 보드 위라 겹치면 읽을 수 없다. **HUD 라벨은 이 상한의 영향을 받지 않는다** —
-  /// 상한은 뷰가 갖고, 초과분은 `+N건 합계` 칩으로 집계된다.
-  static const int _maxBoardFloaters = 6;
 
   double _tile = 40;
   double _boardPx = 280;
@@ -388,6 +403,7 @@ class RuneBattleGame extends FlameGame {
       _decayFlashes(dt);
     }
     _advanceMonsterTurn(dt);
+    _advanceGuidedAutoSwap(dt);
   }
 
   /// 유휴 상태에서 남은 타일 섬광을 감쇠시킨다.
@@ -651,6 +667,17 @@ class RuneBattleGame extends FlameGame {
   // ── 입력 (RuneBoardLayer에서 호출) ──
 
   void _onBoardDragStart(int index) {
+    // 유도 모드: 시연할 칸 말고 다른 칸에서 시작한 드래그는 아예 시작되지 않는다.
+    // (이제 막으려면 턴을 소모시키고 되돌리는 것보다 여기서 끊는 편이 확실하다)
+    final req = _requiredMove;
+    if (_tutorialGuided && req != null) {
+      if (index != req.from) {
+        _hintDismissed = false; // 유도선을 다시 띄운다
+        onWrongMove?.call(PuzzleMove(index, index));
+        _hudChanged();
+        return;
+      }
+    }
     _clearSelectedTile();
     dismissHint(); // 조작을 시작하면 스와이프 힌트를 숨긴다.
     // 드래그는 스왑 의도다 — 조준 중이었다면 그대로 무시하고 푼다. 조준 상태로
@@ -720,6 +747,17 @@ class RuneBattleGame extends FlameGame {
   /// 탭 입력: 룬을 선택하거나 선택한 룬과 인접한 룬을 교환한다.
   void _onBoardTap(int index) {
     dismissHint(); // 조작을 시작하면 스와이프 힌트를 숨긴다.
+    // 유도 모드: 시연하는 두 칸 밖의 탭은 무시한다 (선택 자체를 안 시킨다).
+    final req = _requiredMove;
+    if (_tutorialGuided && req != null) {
+      if (index != req.from && index != req.to) {
+        _clearSelectedTile();
+        _hintDismissed = false;
+        onWrongMove?.call(PuzzleMove(index, index));
+        _hudChanged();
+        return;
+      }
+    }
     if (battle.state.phase == BattlePhase.plan) {
       battle.onFirstTouch();
       _hudChanged();
@@ -763,6 +801,16 @@ class RuneBattleGame extends FlameGame {
   /// Swap 확정 (드래그 종료). Resolve-first 후 연출 재생.
   void submitMove(PuzzleMove move) {
     if (!isIdle) return;
+    // 유도 모드: 시연하지 않은 수는 **턴을 소모시키지 않고** 되돌린다.
+    // 잘못된 수로 몬스터 반격을 맞고 튜토리얼이 헝클어지면 배움이 아니라 좌절만 남는다.
+    if (!_isAllowedMove(move)) {
+      _hintDismissed = false;
+      battle.state.phase = BattlePhase.action;
+      battle.state.inputLocked = false;
+      onWrongMove?.call(move);
+      _hudChanged();
+      return;
+    }
     battle.onDragEnd(move);
     _kickPlayback(move: move);
   }
@@ -821,6 +869,55 @@ class RuneBattleGame extends FlameGame {
   /// 플레이어가 조작을 시작했으므로 힌트를 숨긴다.
   void dismissHint() {
     _hintDismissed = true;
+  }
+
+  // ── 튜토리얼 유도 모드 ──
+
+  /// 튜토리얼 유도 모드를 켜고 **강제 스와이프**를 예약한다.
+  ///
+  /// [RuneTutorialView] 가 섹션 시작 시 호출한다.
+  ///
+  /// - [enabled] false 면 모든 잠금이 풀리고 예약도 취소된다 (일반 전투).
+  /// - [requiredMove] 를 주면 그 스왑만 허용된다. 다른 수를 시도하면
+  ///   [onWrongMove] 가 발화하고 엔진 상태는 되돌린다(턴 소모 없음).
+  /// - [autoDelay] 초 뒤에 그 수가 **자동으로** 실행된다(손가락 시연 후 스왑).
+  void setTutorialGuide({
+    required bool enabled,
+    PuzzleMove? requiredMove,
+    double autoDelay = 1.2,
+  }) {
+    _tutorialGuided = enabled;
+    _requiredMove = enabled ? requiredMove : null;
+    _guideTimer = (enabled && requiredMove != null) ? autoDelay : -1;
+  }
+
+  /// [move] 가 유도 모드에서 허용되는 수인가.
+  bool _isAllowedMove(PuzzleMove move) {
+    if (!_tutorialGuided) return true;
+    final req = _requiredMove;
+    if (req == null) return true; // 보드 조작을 가르치지 않는 구간(스킬 섹션)
+    return move.from == req.from && move.to == req.to;
+  }
+
+  /// 강제 스와이프 카운트다운. 예약 시간이 지나면 플레이어 손 대신 그 수를 실행한다.
+  ///
+  /// 연출·몬스터 턴·일시정지 중에는 예약이 **취소**된다 — 시간이 흘렀다고 섹션
+  /// 시작 몇 초 뒤에 뜬 매치가 되면 구도가 뒤틀려 보이기 때문이다.
+  void _advanceGuidedAutoSwap(double dt) {
+    if (_guideTimer < 0) return;
+    if (!_tutorialGuided || !isIdle || _requiredMove == null) {
+      _guideTimer = -1;
+      return;
+    }
+    _guideTimer -= dt;
+    if (_guideTimer > 0) return;
+    final move = _requiredMove!;
+    _guideTimer = -1;
+    // 유도선이 이미 "이렇게 미세요"를 보여줬으므로 그대로 재현한다.
+    // (_onBoardDragStart가 힌트를 접고, onDragEnd가 해석을 시작한다.)
+    _onBoardDragStart(move.from);
+    _onBoardDragUpdate(move.to);
+    _onBoardDragEnd(from: move.from, hover: move.to);
   }
 
   /// 보드에 힌트를 그릴 조건.
@@ -960,24 +1057,14 @@ class RuneBattleGame extends FlameGame {
         onHeroDamage?.call(heroDamageEvents);
       }
 
-      var shownFloaters = 0;
-      for (final hit in <DamageHit>[...r.monsterHits, ...r.partyHits]) {
+      for (final hit in r.monsterHits) {
         // waveNumber 0(직접 타격)은 마지막 파도에만 표기.
         final isDirect = hit.waveNumber == 0;
         if (isDirect && !last) continue;
         if (!isDirect && hit.waveNumber != waveNo) continue;
-        // Black 5+ 정화(피해 0)는 숫자를 띄우지 않는다 — "0" 플로터는 버그로
-        // 읽힌다. 타일 섬광과 HP 변화로 정화 사실이 드러난다.
         if (hit.damage <= 0) continue;
-        if (hit.source == DamageSource.blackMatch) {
-          if (shownFloaters < _maxBoardFloaters) {
-            _spawnHitFloater(hit);
-            shownFloaters++;
-          }
-        } else {
-          // 상한 없이 전량 전달 — 화면에 몇 개까지 띄울지는 뷰가 정한다.
-          onMonsterDamage?.call(hit);
-        }
+        // 상한 없이 전량 전달 — 화면에 몇 개까지 띄울지는 뷰가 정한다.
+        onMonsterDamage?.call(hit);
       }
 
       // 속성 영웅 없음 경고: 매치는 했는데 그 색 살아있는 영웅이 없어 데미지가
@@ -1022,29 +1109,6 @@ class RuneBattleGame extends FlameGame {
     // 해석 결과가 없더라도 반드시 flush — 보류 상태로 남으면 HUD 가 멈춘다.
     _flushHud();
   }
-
-  /// 매칭 1건의 데미지 표기: 발생 칸 위에 확정 수치 + 적용 배율 캡션.
-  void _spawnHitFloater(DamageHit hit) {
-    final toParty = hit.source == DamageSource.blackMatch;
-    final color = toParty ? const Color(0xFFFF6B6B) : Color(hit.element.argb);
-    final anchor = hit.cells.isEmpty
-        ? Vector2(_boardPx / 2, _tile * 2.6)
-        : _cellCenter(hit.cells.first);
-    _spawnFloater(
-      '-${hit.damage}',
-      anchor,
-      color,
-      sub: hit.caption,
-      fontScale: toParty ? 0.9 : 1.0,
-      duration: 1.2,
-    );
-  }
-
-  /// 칸 인덱스의 타일 위쪽 중앙 좌표 (플로터 배치 기준).
-  Vector2 _cellCenter(int index) => Vector2(
-    (index % PuzzleBoard.cols) * _tile + _tile / 2,
-    (index ~/ PuzzleBoard.cols) * _tile + _tile * 0.34,
-  );
 
   /// 모든 타일을 완전 정지 상태로 스냅한다.
   ///
@@ -1343,8 +1407,6 @@ class RuneBattleGame extends FlameGame {
         return const Color(0xFFFFE082);
       case RuneElement.poison:
         return const Color(0xFFAA66CC);
-      case RuneElement.black:
-        return const Color(0xFF9E9E9E);
       case null:
         return const Color(0xFFF7F0D6);
     }
@@ -1683,6 +1745,26 @@ class RuneBoardLayer extends PositionComponent
       final u = dir / len;
       final start = a + u * (game._tile * 0.30);
       final tip = b - u * (game._tile * 0.32);
+
+      // 유도선: 점선 레일. 두 칸이 "이어져 있다"는 관계를 먼저 읽히게 하고,
+      // 그 위에 화살촉·손가락이 겹쳐 어느 방향으로 미는지 설명한다.
+      final dash = game._tile * 0.16;
+      final gap = game._tile * 0.11;
+      final railPaint = Paint()
+        ..color = ring.withValues(alpha: 0.30 + 0.30 * pulse)
+        ..strokeWidth = math.max(3.0, game._tile * 0.075).toDouble()
+        ..strokeCap = StrokeCap.round;
+      var travelled = 0.0;
+      while (travelled < len) {
+        final segEnd = math.min(travelled + dash, len);
+        canvas.drawLine(
+          start + u * travelled,
+          start + u * segEnd,
+          railPaint,
+        );
+        travelled = segEnd + gap;
+      }
+
       canvas.drawLine(
         start,
         tip,

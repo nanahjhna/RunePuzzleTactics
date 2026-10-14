@@ -61,7 +61,6 @@ void main() {
       expect(s3a.type, StageType.normal);
       expect(s3a.weakElement, StageGenerator.weakElementFor(3));
       expect(s3a.resistElement, StageGenerator.resistElementFor(3));
-      expect(s3a.maxBlackOnBoard, 6);
 
       // HP/ATK는 증가곡선 (RPT-176)
       expect(g.generate(4).monsterHp, greaterThan(g.generate(3).monsterHp));
@@ -71,14 +70,13 @@ void main() {
       );
     });
 
-    test('Boss: HP ×2.5, 카운트다운 3, Black 허용 7 (RPT-145, RPT-198)', () {
+    test('Boss: HP ×2.5, 카운트다운 3 (RPT-145, RPT-198)', () {
       final g = StageGenerator();
       final normal10 = (g.baseHp * pow(1 + 10 * 0.08, 1.15)).round();
       final boss = g.generate(10);
       expect(boss.type, StageType.boss);
       expect(boss.monsterHp, (normal10 * 2.5).round());
       expect(boss.bossCountdown, 3);
-      expect(boss.maxBlackOnBoard, 7);
     });
 
     test('골드 보상 증가', () {

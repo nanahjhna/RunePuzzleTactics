@@ -39,9 +39,6 @@ void main() {
       weakElement: RuneElement.fire,
       resistElement: RuneElement.water,
       bossCountdown: 0,
-      blackSpawnRate: 0.05,
-      maxBlackOnBoard: 6,
-      blackDamage: 10,
       goldReward: 0,
     );
 
@@ -51,12 +48,6 @@ void main() {
       expect(stage.affinityFor(RuneElement.light), 1.0);
       expect(stage.affinityFor(RuneElement.poison), 1.0);
       expect(stage.affinityFor(RuneElement.water), 0.5);
-    });
-
-    test('Black 은 약점/열세 어느 쪽도 아니다 (비교 대상이 없으므로 1.0)', () {
-      // 약점/열세 속성으로는 애초에 생성되지 않으므로 아래 두 분기에 걸린다.
-      expect(stage.affinityFor(RuneElement.black), 1.0);
-      expect(stage.isWeakAgainst(RuneElement.black), false);
     });
 
     test('isWeakAgainst 은 약점 속성만 true', () {
@@ -254,27 +245,6 @@ void main() {
     });
   });
 
-  group('BlackDamageCalculator', () {
-    test('Direct ×1.0 / Cascade ×0.5', () {
-      final calc = BlackDamageCalculator();
-      expect(
-        calc.partyDamage(blackBaseDamage: 10, source: MatchSource.direct),
-        10,
-      );
-      expect(
-        calc.partyDamage(blackBaseDamage: 10, source: MatchSource.cascade),
-        5,
-      );
-    });
-
-    test('소수점 이하 반올림 (일관된 Round)', () {
-      final calc = BlackDamageCalculator();
-      expect(
-        calc.partyDamage(blackBaseDamage: 9, source: MatchSource.cascade),
-        5, // 4.5.round() = 5
-      );
-    });
-  });
 }
 
 StageConfig _testStage() => const StageConfig(
@@ -285,9 +255,6 @@ StageConfig _testStage() => const StageConfig(
   weakElement: RuneElement.fire,
   resistElement: RuneElement.water,
   bossCountdown: 0,
-  blackSpawnRate: 0.05,
-  maxBlackOnBoard: 6,
-  blackDamage: 10,
   goldReward: 0,
 );
 

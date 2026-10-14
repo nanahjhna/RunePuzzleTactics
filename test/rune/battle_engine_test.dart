@@ -142,7 +142,6 @@ void main() {
       // 요소별 스킬 재설계: 5요소 = 5효과. 같은 요소의 4명은 같은 효과를 쓴다 —
       // 차이는 수치가 아니라 **보드 상태**(몇 칸이 바뀌었는지)에서 나온다.
       for (final element in RuneElement.values) {
-        if (element == RuneElement.black) continue;
         final specs = [
           for (final h in HeroPool.forElement(element))
             HeroSkills.specFor(h.heroId)!,
@@ -255,12 +254,8 @@ void main() {
         expect(battle.lastResolve!.heroSkillEvents.single.amount, waterBefore);
       });
 
-      test('빈칸·Black·이미 불인 칸은 지정할 수 없다', () {
+      test('빈칸·이미 불인 칸은 지정할 수 없다', () {
         final board = boardFromRows(cleanRows);
-        board.setIndex(
-          idx(board, 5, 5),
-          const BoardTile.rune(RuneElement.black),
-        );
         board.setIndex(
           idx(board, 0, 0),
           const BoardTile.rune(RuneElement.fire),
@@ -271,10 +266,6 @@ void main() {
         battle.startBattle();
         final spec = HeroSkills.specFor('fire_a')!;
         expect(battle.isValidSkillTarget(spec, idx(board, 1, 0)), isTrue);
-        expect(
-          battle.isValidSkillTarget(spec, idx(board, 5, 5)),
-          isFalse,
-        ); // Black
         expect(battle.isValidSkillTarget(spec, idx(board, 0, 0)), isFalse); // 불
         expect(
           battle.isValidSkillTarget(spec, idx(board, 4, 5)),
@@ -378,23 +369,6 @@ void main() {
         );
       });
 
-      test('Black 룬도 지정할 수 있다 (유일한 제거 수단)', () {
-        final board = boardFromRows(cleanRows);
-        final blackAt = idx(board, 2, 2);
-        board.setIndex(blackAt, const BoardTile.rune(RuneElement.black));
-
-        final battle = singleHeroBattle('light_a', board: board);
-        battle.startBattle();
-        final spec = HeroSkills.specFor('light_a')!;
-        expect(battle.isValidSkillTarget(spec, blackAt), isTrue);
-
-        battle.onFirstTouch();
-        expect(battle.useHeroSkill('light_a', target: blackAt), isTrue);
-        expect(
-          battle.lastResolve!.heroSkillEvents.single.cells,
-          contains(blackAt),
-        );
-      });
     });
 
     group('Poison — 연소 폭발 (독 룬 전량 제거 + 즉시 피해)', () {
@@ -494,10 +468,6 @@ void main() {
 
       test('하이라이트 대상 목록과 유효 판정이 같은 규칙을 쓴다', () {
         final board = boardFromRows(cleanRows);
-        board.setIndex(
-          idx(board, 5, 5),
-          const BoardTile.rune(RuneElement.black),
-        );
         final battle = singleHeroBattle('fire_a', board: board);
         battle.startBattle();
         final spec = HeroSkills.specFor('fire_a')!;
@@ -506,7 +476,6 @@ void main() {
         for (final i in targets) {
           expect(battle.isValidSkillTarget(spec, i), isTrue);
         }
-        expect(targets, isNot(contains(idx(board, 5, 5))));
       });
     });
   });

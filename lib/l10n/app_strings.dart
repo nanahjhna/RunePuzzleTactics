@@ -221,7 +221,7 @@ class AppLocalizations {
         'flow quietly mends what the fire heroes burn away.',
     'hero_desc_water_a':
         'A calm surface with a bottomless current. She is the one who washes the '
-        'black residue off the board.',
+        'board clean.',
     'hero_desc_light_a':
         'A bright soul that has yet to learn what her light is for. Still standing '
         'at the front of the party, holding the line.',
@@ -427,7 +427,7 @@ class AppLocalizations {
     'damage_source_runeMatch': 'Rune matches',
     'damage_source_heroSkill': 'Hero skills',
     'damage_source_poisonTick': 'Poison stacks',
-    'damage_source_blackRune': 'Black rune hits',
+
     'damage_source_monsterAttack': 'Monster attacks',
     'damage_source_bossUltimate': 'Boss ultimate',
     'damage_total': 'MATCH TOTAL',
@@ -444,6 +444,7 @@ class AppLocalizations {
     'tutorial_step': 'STEP {current} / {total}',
     'tutorial_step_tag': 'STEP {current} · {id}',
     'tutorial_hint': '💡 Hint: swipe {from} ⇄ {to}',
+    'tutorial_retry_hint': 'Follow the glowing arrow to swipe.',
     'tutorial_tile_label': '(col {col}, row {row})',
     'tutorial_skill_tap': 'Tap the hero portrait to use its skill',
     // Fire/Light 은 표적 지정 스킬 — 포트레이트 한 번으론 끝나지 않는다.
@@ -463,6 +464,11 @@ class AppLocalizations {
         'Damage = the summed attack of your living heroes of that element '
         '× combo × affinity.\n'
         'This monster is weak to 🔥 Fire, so it takes ×1.5. Clear 3 Fire runes.',
+    'tutorial_title_resist': 'Watch out! Monsters resist some elements',
+    'tutorial_msg_resist':
+        'This monster resists 🔥 Fire.\n'
+        'The same 3 Fire runes now deal ×0.5 instead of ×1.5. '
+        'Check the weakness before you swipe!',
     'tutorial_title_combo': 'Cascades make combos!',
     'tutorial_msg_combo':
         'After a match, runes fall and can group again into a COMBO!\n'
@@ -471,23 +477,6 @@ class AppLocalizations {
     'tutorial_msg_monster':
         'When your turn ends after a swipe, the monster attacks.\n'
         'Watch your party HP (🛡 Party) decrease.',
-    'tutorial_title_black-danger': '🖤 Black runes are dangerous',
-    'tutorial_msg_black-danger':
-        'Matching 3 or more Black runes damages your party!\n'
-        'There are 3 Black runes adjacent on the board. Swiping will hurt '
-        'you… be careful.',
-    'tutorial_title_black-4-line': 'Black 4 damages + line purge!',
-    'tutorial_msg_black-4-line':
-        'Matching 4 Black runes damages your party AND purges every other '
-        'Black in the same line!\n'
-        'The board has 4 Black in a row plus 1 more to purge. Swipe to see '
-        'the line purge.',
-    'tutorial_title_black-purge': 'Line up 5 Black runes to purge!',
-    'tutorial_msg_black-purge':
-        'Making a line of 5 Black runes purges all Black on the board '
-        'without damage.\n'
-        'There are already 5 Black runes at the bottom. Don\'t touch them, '
-        'swipe other runes.',
     'tutorial_title_skill': 'Use a hero skill',
     'tutorial_msg_skill':
         'Tap a hero portrait to activate that hero\'s skill.\n'
@@ -519,7 +508,6 @@ class AppLocalizations {
     'element_water': 'Water',
     'element_light': 'Lightning',
     'element_poison': 'Poison',
-    'element_black': 'Black',
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -861,7 +849,7 @@ class AppLocalizations {
     'damage_source_runeMatch': '룬 매치',
     'damage_source_heroSkill': '영웅 스킬',
     'damage_source_poisonTick': '독 스택',
-    'damage_source_blackRune': '검은 룬 피격',
+
     'damage_source_monsterAttack': '몬스터 공격',
     'damage_source_bossUltimate': '보스 궁극기',
     'damage_total': '매칭 합계',
@@ -878,6 +866,7 @@ class AppLocalizations {
     'tutorial_step': 'STEP {current} / {total}',
     'tutorial_step_tag': 'STEP {current} · {id}',
     'tutorial_hint': '💡 힌트: {from} ⇄ {to} 스와이프',
+    'tutorial_retry_hint': '빛나는 화살표를 따라 스와이프해 보세요.',
     'tutorial_tile_label': '({col}열, {row}행)',
     'tutorial_skill_tap': '영웅 초상화를 눌러 스킬 사용',
     'tutorial_skill_tap_target': '초상화를 누른 뒤 보드의 룬을 눌러 조준',
@@ -892,6 +881,11 @@ class AppLocalizations {
     'tutorial_msg_affinity':
         '데미지는 "그 색 살아있는 영웅의 공격력 합" × 콤보 × 상성입니다.\n'
         '이번 몬스터는 🔥 불에 약하므로 ×1.5 배가 붙습니다. Fire 3개를 터트려 보세요.',
+    'tutorial_title_resist': '주의! 몬스터가 강한 속성도 있습니다',
+    'tutorial_msg_resist':
+        '이번 몬스터는 🔥 불에 강합니다.\n'
+        '같은 Fire 3개라도 배율이 ×1.5가 아니라 ×0.5로 떨어집니다. '
+        '먼저 몬스터의 약점을 확인하세요!',
     'tutorial_title_combo': '연쇄가 일어나면 콤보!',
     'tutorial_msg_combo':
         '매치 후 룬이 떨어지며 다시 3개가 모이면 COMBO!\n'
@@ -900,18 +894,6 @@ class AppLocalizations {
     'tutorial_msg_monster':
         '한 번의 스와이프 후 턴이 끝나면 몬스터가 공격합니다.\n'
         '내 체력(🛡 파티)이 깎이는 걸 확인해 보세요.',
-    'tutorial_title_black-danger': '🖤 Black은 위험합니다',
-    'tutorial_msg_black-danger':
-        '검은 룬(Black) 3개 이상이 매치되면 파티가 피해를 입습니다!\n'
-        '지금 보드에 Black 3개가 붙어 있어요. 스와이프하면 피해를 볼 수 있습니다… 조심하세요.',
-    'tutorial_title_black-4-line': 'Black 4개는 피해 + 같은 줄 정화!',
-    'tutorial_msg_black-4-line':
-        'Black 4개가 매치되면 파티가 피해를 입고, 같은 줄의 나머지 Black까지 정화됩니다.\n'
-        '지금 보드에 Black 4개 + 정화될 Black 1개가 있어요. 스와이프해서 확인해 보세요.',
-    'tutorial_title_black-purge': 'Black 5개를 모으면 정화!',
-    'tutorial_msg_black-purge':
-        'Black 5개를 한 줄로 만들면 피해 없이 보드의 모든 Black을 정화합니다.\n'
-        '아래 보드에 Black 5개가 이미 있어요. 건드리지 말고 다른 룬을 스와이프해 보세요.',
     'tutorial_title_skill': '영웅 스킬 사용하기',
     'tutorial_msg_skill':
         '영웅 초상화를 눌러 해당 영웅의 스킬을 사용하세요.\n'
@@ -941,7 +923,6 @@ class AppLocalizations {
     'element_water': '물',
     'element_light': '번개',
     'element_poison': '독',
-    'element_black': '검은 룬',
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -1285,7 +1266,7 @@ class AppLocalizations {
     'damage_source_runeMatch': 'ルーンマッチ',
     'damage_source_heroSkill': 'ヒーロースキル',
     'damage_source_poisonTick': '毒スタック',
-    'damage_source_blackRune': 'Blackルーン被弾',
+
     'damage_source_monsterAttack': 'モンスター攻撃',
     'damage_source_bossUltimate': 'ボス必殺技',
     'damage_total': 'マッチ合計',
@@ -1302,6 +1283,7 @@ class AppLocalizations {
     'tutorial_step': 'STEP {current} / {total}',
     'tutorial_step_tag': 'STEP {current} · {id}',
     'tutorial_hint': '💡 ヒント: {from} ⇄ {to} をスワイプ',
+    'tutorial_retry_hint': '光る矢印に沿ってスワイプしましょう。',
     'tutorial_tile_label': '({col}列, {row}行)',
     'tutorial_skill_tap': 'ヒーローのポートレートをタップしてスキルを使う',
     'tutorial_skill_tap_target': 'ポートレートを押してから盤面のルーンをタップして狙撃',
@@ -1316,6 +1298,11 @@ class AppLocalizations {
     'tutorial_msg_affinity':
         'ダメージは「その属性の生存ヒーローの攻撃力合計」× コンボ × 相性 です。\n'
         'このモンスターは 🔥 炎に弱いので×1.5倍。ファイアルーンを3つ揃えましょう。',
+    'tutorial_title_resist': '注意！モンスターに強い属性もあります',
+    'tutorial_msg_resist':
+        'このモンスターは 🔥 炎に強いです。\n'
+        '同じ炎3つでも倍率は×1.5ではなく×0.5になります。'
+        'まず弱点を確認しましょう！',
     'tutorial_title_combo': '連鎖でコンボ！',
     'tutorial_msg_combo':
         'マッチ後にルーンが落ちて再び3つ揃うとコンボ！\n'
@@ -1324,18 +1311,6 @@ class AppLocalizations {
     'tutorial_msg_monster':
         'スワイプ後にターンが終わるとモンスターが攻撃します。\n'
         '自分のHP(🛡 パーティ)が減ることを確認しましょう。',
-    'tutorial_title_black-danger': '🖤 ブラックは危険',
-    'tutorial_msg_black-danger':
-        'ブラックルーンを3つ以上揃えるとパーティがダメージを受けます！\n'
-        'ボードにブラックが3つ並んでいます。スワイプするとダメージを受けます…注意してください。',
-    'tutorial_title_black-4-line': 'ブラック4つはダメージ+同列浄化！',
-    'tutorial_msg_black-4-line':
-        'ブラック4つを揃えるとパーティにダメージが入り、同じ列の他のブラックも浄化されます。\n'
-        'ボードにはブラック4つ+浄化される1つがあります。スワイプして確認しましょう。',
-    'tutorial_title_black-purge': 'ブラックを5つ揃えると浄化！',
-    'tutorial_msg_black-purge':
-        'ブラックを5つ一直線に揃えると、ダメージなしでボードのすべてのブラックを浄化します。\n'
-        '下のボードにすでにブラックが5つあります。触らずに他のルーンをスワイプしましょう。',
     'tutorial_title_skill': 'ヒーロースキルを使おう',
     'tutorial_msg_skill':
         'ヒーローのポートレートをタップしてスキルを使いましょう。\n'
@@ -1365,7 +1340,6 @@ class AppLocalizations {
     'element_water': '水',
     'element_light': '稲妻',
     'element_poison': '毒',
-    'element_black': 'ブラック',
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -1702,7 +1676,7 @@ class AppLocalizations {
     'damage_source_runeMatch': '符文连消',
     'damage_source_heroSkill': '英雄技能',
     'damage_source_poisonTick': '中毒层数',
-    'damage_source_blackRune': '黑色符文受击',
+
     'damage_source_monsterAttack': '怪物攻击',
     'damage_source_bossUltimate': '首领终极技',
     'damage_total': '连消合计',
@@ -1719,6 +1693,7 @@ class AppLocalizations {
     'tutorial_step': 'STEP {current} / {total}',
     'tutorial_step_tag': 'STEP {current} · {id}',
     'tutorial_hint': '💡 提示: 滑动 {from} ⇄ {to}',
+    'tutorial_retry_hint': '沿着发光的箭头滑动试试。',
     'tutorial_tile_label': '(第{col}列, 第{row}行)',
     'tutorial_skill_tap': '点击英雄头像使用技能',
     // Fire/Light 是指标型技能 —— 点击头像后还需选择目标。
@@ -1734,6 +1709,11 @@ class AppLocalizations {
     'tutorial_msg_affinity':
         '伤害 = “该属性存活英雄攻击力之和” × 连击 × 属性克制。\n'
         '该怪物弱🔥火焰，因此受到 ×1.5。连消3枚火焰符文吧。',
+    'tutorial_title_resist': '注意！怪物也有强抗的属性',
+    'tutorial_msg_resist':
+        '该怪物抗🔥火焰。\n'
+        '同样连消3枚火焰，倍率不再是 ×1.5 而是 ×0.5。'
+        '先确认弱点再滑动吧！',
     'tutorial_title_combo': '连锁就会产生连击！',
     'tutorial_msg_combo':
         '连消后符文下落再次凑齐3枚即为 COMBO！\n'
@@ -1742,18 +1722,6 @@ class AppLocalizations {
     'tutorial_msg_monster':
         '滑动一次后回合结束，怪物就会攻击。\n'
         '注意队伍HP(🛡 队伍)会减少。',
-    'tutorial_title_black-danger': '🖤 黑色符文很危险',
-    'tutorial_msg_black-danger':
-        '连消3枚以上黑色符文，队伍会受到伤害！\n'
-        '棋盘上有3枚相邻的黑色符文。滑动会受伤……请小心。',
-    'tutorial_title_black-4-line': '黑色4枚: 受伤 + 同列净化！',
-    'tutorial_msg_black-4-line':
-        '连消4枚黑色符文时，队伍会受伤，且同列其余黑色符文也会被净化。\n'
-        '棋盘上有4枚黑色 + 1枚将被净化。滑动看看吧。',
-    'tutorial_title_black-purge': '凑齐5枚黑色符文即可净化！',
-    'tutorial_msg_black-purge':
-        '将5枚黑色符文连成一线，可在不受伤害的情况下净化棋盘上所有黑色符文。\n'
-        '下方棋盘已有5枚黑色符文。不要碰它们，滑动其他符文。',
     'tutorial_title_skill': '使用英雄技能',
     'tutorial_msg_skill':
         '点击英雄头像即可发动该英雄的技能。\n'
@@ -1782,7 +1750,6 @@ class AppLocalizations {
     'element_water': '水',
     'element_light': '闪电',
     'element_poison': '毒',
-    'element_black': '黑色',
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -2119,7 +2086,7 @@ class AppLocalizations {
     'damage_source_runeMatch': '符文連消',
     'damage_source_heroSkill': '英雄技能',
     'damage_source_poisonTick': '中毒層數',
-    'damage_source_blackRune': '黑色符文受擊',
+
     'damage_source_monsterAttack': '怪物攻擊',
     'damage_source_bossUltimate': '首領終極技',
     'damage_total': '連消合計',
@@ -2136,6 +2103,7 @@ class AppLocalizations {
     'tutorial_step': 'STEP {current} / {total}',
     'tutorial_step_tag': 'STEP {current} · {id}',
     'tutorial_hint': '💡 提示: 滑動 {from} ⇄ {to}',
+    'tutorial_retry_hint': '沿著發光的箭頭滑動試試。',
     'tutorial_tile_label': '(第{col}列, 第{row}行)',
     'tutorial_skill_tap': '點擊英雄頭像使用技能',
     // Fire/Light 是指標型技能 —— 點擊頭像後還需選擇目標。
@@ -2151,6 +2119,11 @@ class AppLocalizations {
     'tutorial_msg_affinity':
         '傷害 = 「該屬性存活英雄攻擊力之和」 × 連擊 × 屬性克制。\n'
         '該怪物弱🔥火焰，因此受到 ×1.5。連消3枚火焰符文吧。',
+    'tutorial_title_resist': '注意！怪物也有強抗的屬性',
+    'tutorial_msg_resist':
+        '該怪物抗🔥火焰。\n'
+        '同樣連消3枚火焰，倍率不再是 ×1.5 而是 ×0.5。'
+        '先確認弱點再滑動吧！',
     'tutorial_title_combo': '連鎖就會產生連擊！',
     'tutorial_msg_combo':
         '連消後符文下落再次湊齊3枚即為 COMBO！\n'
@@ -2159,18 +2132,6 @@ class AppLocalizations {
     'tutorial_msg_monster':
         '滑動一次後回合結束，怪物就會攻擊。\n'
         '注意隊伍HP(🛡 隊伍)會減少。',
-    'tutorial_title_black-danger': '🖤 黑色符文很危險',
-    'tutorial_msg_black-danger':
-        '連消3枚以上黑色符文，隊伍會受到傷害！\n'
-        '棋盤上有3枚相鄰的黑色符文。滑動會受傷……請小心。',
-    'tutorial_title_black-4-line': '黑色4枚: 受傷 + 同列淨化！',
-    'tutorial_msg_black-4-line':
-        '連消4枚黑色符文時，隊伍會受傷，且同列其餘黑色符文也會被淨化。\n'
-        '棋盤上有4枚黑色 + 1枚將被淨化。滑動看看吧。',
-    'tutorial_title_black-purge': '湊齊5枚黑色符文即可淨化！',
-    'tutorial_msg_black-purge':
-        '將5枚黑色符文連成一線，可在不受傷害的情況下淨化棋盤上所有黑色符文。\n'
-        '下方棋盤已有5枚黑色符文。不要碰它們，滑動其他符文。',
     'tutorial_title_skill': '使用英雄技能',
     'tutorial_msg_skill':
         '點擊英雄頭像即可發動該英雄的技能。\n'
@@ -2199,6 +2160,5 @@ class AppLocalizations {
     'element_water': '水',
     'element_light': '閃電',
     'element_poison': '毒',
-    'element_black': '黑色',
   };
 }

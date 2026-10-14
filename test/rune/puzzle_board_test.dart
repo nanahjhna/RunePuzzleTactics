@@ -15,10 +15,7 @@ void main() {
 
     test('초기 생성 보드에 3매치 없음 (여러 시드, RPT-68/169)', () {
       for (var seed = 0; seed < 50; seed++) {
-        final board = PuzzleBoard.generate(
-          rng: Random(seed),
-          blackSpawnRate: 0.1,
-        );
+        final board = PuzzleBoard.generate(rng: Random(seed));
         // 가로
         for (var y = 0; y < PuzzleBoard.rows; y++) {
           var run = 1;
@@ -40,15 +37,6 @@ void main() {
           }
         }
       }
-    });
-
-    test('Black은 maxBlackOnBoard를 넘지 않음 (RPT-57/58)', () {
-      final board = PuzzleBoard.generate(
-        rng: Random(7),
-        blackSpawnRate: 0.9,
-        maxBlackOnBoard: 6,
-      );
-      expect(board.blackCount, lessThanOrEqualTo(6));
     });
   });
 

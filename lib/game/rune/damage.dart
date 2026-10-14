@@ -18,8 +18,6 @@
 /// ```
 library;
 
-import 'puzzle_engine.dart';
-
 /// 반격 피해 1건의 산출 내역 (결과 화면의 공식 캡션용).
 class IncomingDamageResult {
   const IncomingDamageResult({
@@ -102,28 +100,4 @@ class DamageCalculator {
   }) => incomingDamage(attack: attack, defenderDefense: defenderDefense).damage;
 }
 
-/// Black 룬 파티 피해 계산.
-///
-/// Black 은 **플레이어가 맞추지만 정작 맞는 쪽은 파티**다 — 페널티 룬이라
-/// 매칭 개수가 곧 페널티 크기를 정한다.
-///
-/// | 매칭 칸 수 | 처리 |
-/// |---|---|
-/// | 3 | 기본 피해 |
-/// | 4 | 기본 피해 + 라인 퍼지 |
-/// | 5 이상 | **피해 0** + 보드 남은 Black 전량 정화 |
-///
-/// 피해량 자체는 [StageConfig.blackDamage] 하나가 정한다.
-class BlackDamageCalculator {
-  /// Direct(Player Swap) = ×1.0, Cascade(자동 연쇄) = ×0.5.
-  ///
-  /// 캐스케이드로 불어난 피해는 절반이다 — 연쇄가 길어질수록 전멸 위험이 줄고,
-  /// 그 대신 콤보 배율로 몬스터를 빨리 깎아야 한다.
-  static double sourceMultiplier(MatchSource source) =>
-      source == MatchSource.direct ? 1.0 : 0.5;
 
-  int partyDamage({
-    required int blackBaseDamage,
-    required MatchSource source,
-  }) => (blackBaseDamage * sourceMultiplier(source)).round();
-}

@@ -21,7 +21,6 @@ class BattleEngine {
     required this.state,
     required this.engine,
     required this.damageCalc,
-    required this.blackCalc,
     Random? rng,
   }) : rng = rng ?? Random();
 
@@ -36,19 +35,10 @@ class BattleEngine {
     List<RuneHeroDef> partyHeroes = const [],
     List<HeroCombatStats>? heroStats,
   }) {
-    final engine = PuzzleEngine(
-      rng: rng,
-      blackSpawnRate: stage.blackSpawnRate,
-      maxBlackOnBoard: stage.maxBlackOnBoard,
-    );
+    final engine = PuzzleEngine(rng: rng);
     // 스크립트 보드(튜토리얼 등)가 주어지면 그대로 사용 (RPT-405).
     final initialBoard =
-        board ??
-        PuzzleBoard.generate(
-          blackSpawnRate: stage.blackSpawnRate,
-          maxBlackOnBoard: stage.maxBlackOnBoard,
-          rng: rng,
-        );
+        board ?? PuzzleBoard.generate(rng: rng);
     // Match-free generation can still produce a board with no legal swap.
     if (board == null && !engine.hasAvailableMove(initialBoard)) {
       engine.shuffleBoard(initialBoard);
@@ -84,7 +74,6 @@ class BattleEngine {
       state: state,
       engine: engine,
       damageCalc: const DamageCalculator(),
-      blackCalc: BlackDamageCalculator(),
       // 몬스터 타겟 랜덤도 같은 시드를 쓴다 — 테스트가 결정성을 유지한다.
       rng: rng,
     );
@@ -93,7 +82,6 @@ class BattleEngine {
   final BattleState state;
   final PuzzleEngine engine;
   final DamageCalculator damageCalc;
-  final BlackDamageCalculator blackCalc;
 
   /// 몬스터/Black 룬의 공격 대상 선정용 RNG.
   ///
@@ -112,7 +100,7 @@ class BattleEngine {
   /// **사양 결정 5**: 유저 1회 Swap에 대한 단일 해석 결과.
   ///
   /// Flame(프레젠테이션)은 이 객체를 받아 `cascadeSteps → heroSkillEvents →
-  /// playerDamage → blackRuneDamage → monsterAttackEvent → finalState` 순서로
+  /// playerDamage → monsterAttackEvent → finalState` 순서로
   /// **재생만** 한다. 자체 계산은 하지 않는다.
   BattleResolveResult? lastResolve;
 
@@ -243,7 +231,6 @@ class BattleEngine {
       cascadeSteps: const [],
       heroSkillEvents: const [],
       playerDamage: 0,
-      blackRuneDamage: 0,
       monsterAttackEvent: _lastMonsterAttack,
       finalState: state.snapshot,
       board: state.board,
@@ -299,12 +286,10 @@ class BattleEngine {
       heroSkillEvents: [fired.event],
       heroSkillWaves: fired.waves,
       playerDamage: rollup.monsterDamage,
-      blackRuneDamage: rollup.partyDamage,
       monsterAttackEvent: _lastMonsterAttack,
       finalState: state.snapshot,
       board: state.board,
       monsterHits: _withPoisonTick(rollup.monsterHits, _poisonTickHit),
-      partyHits: rollup.partyHits,
       heroDamageEvents: _pendingHeroDamage,
     );
     return true;
@@ -324,13 +309,9 @@ class BattleEngine {
     return switch (spec.effect) {
       // Fire: 아무 색이나 골라 그 색 전체를 불로 바꾸되, 이미 불이거나
       // 폭발 오브인 칸은 "굽이 없다"가 아니라 **의미가 없다** — 무효로 막는다.
-      // Black 은 전량 변환이 걸리면 Black 제거판이 되어 너무 셉다.
       HeroSkillEffect.convertColor =>
-        tile.rune != RuneElement.black &&
-            tile.rune != spec.convertTo &&
-            !tile.isExplosionOrb,
-      // Light: 빈칸만 빼고 전부 허용한다. **Black 까지 지정 가능** —
-      // 요소별 재설계로 Black 정화 스킬이 사라져 이게 유일한 제거 수단이다.
+        tile.rune != spec.convertTo && !tile.isExplosionOrb,
+      // Light: 빈칸만 빼고 전부 허용한다.
       HeroSkillEffect.blastArea => true,
       _ => false,
     };
@@ -351,7 +332,6 @@ class BattleEngine {
         cascadeSteps: const [],
         heroSkillEvents: const [],
         playerDamage: 0,
-        blackRuneDamage: 0,
         monsterAttackEvent: null,
         finalState: state.snapshot,
         board: state.board,
@@ -389,12 +369,10 @@ class BattleEngine {
       cascadeSteps: lastCascade!.waves,
       heroSkillEvents: const [],
       playerDamage: rollup.monsterDamage,
-      blackRuneDamage: rollup.partyDamage,
       monsterAttackEvent: _lastMonsterAttack,
       finalState: state.snapshot,
       board: state.board,
       monsterHits: _withPoisonTick(rollup.monsterHits, _poisonTickHit),
-      partyHits: rollup.partyHits,
       heroDamageEvents: _pendingHeroDamage,
     );
 
@@ -407,93 +385,55 @@ class BattleEngine {
     required MatchSource firstWaveSource,
   }) {
     var monsterDmg = 0;
-    var partyDmg = 0;
     final monsterHits = <DamageHit>[];
-    final partyHits = <DamageHit>[];
 
     for (var i = 0; i < waves.length; i++) {
       final wave = waves[i];
-      final waveSource = i == 0 ? firstWaveSource : MatchSource.cascade;
 
       for (final run in wave.runs) {
-        if (run.isBlack) {
-          // Black 피해는 **살아있는 영웅 중 랜덤 1명**에게 들어간다.
-          // 대상은 여기서 먼저 확정시켜 [DamageHit.heroId] 에 담아둔다 — 피해 0
-          // 이어도 "누가 맞을 뻔했는지" 연출이 읽을 수 있게.
-          final target = _pickLivingUnit();
-          // Black 5+: 피해 0 (RPT-55, RPT-197, RPT-296)
-          if (run.length >= 5) {
-            final hit = DamageHit(
-              source: DamageSource.blackMatch,
-              element: run.element,
-              damage: 0,
-              waveNumber: wave.waveNumber,
-              cells: run.cells,
-              heroId: target?.heroId,
-            );
-            partyHits.add(hit);
-            continue;
-          }
-          final dmg = blackCalc.partyDamage(
-            blackBaseDamage: state.stage.blackDamage,
-            source: waveSource,
+        // 데미지 밑은 **매칭한 색의 살아있는 영웅 ATK 합**이다. 시너지 배율표가
+        // 없어도 단색/다색 편성이 자연스럽게 반영된다 — 같은 색 영웅이 많을수록
+        // 합이 크고, 다른 색 룬을 맞히면 이 색의 공격력은 전혀 반영되지 않는다.
+        final elementAtk = state.attackForElement(run.element);
+
+        // 2페이즈 구조: 매치 위치에 따라 존별 데미지 분배
+        final zoneDistribution = _calculateZoneDistribution(run.cells);
+        for (final zoneInfo in zoneDistribution) {
+          final slot = _slotForZone(zoneInfo.zone);
+          if (slot == null || !slot.isAlive) continue;
+
+          final affinity = slot.monster.affinityFor(run.element);
+          final dmg = damageCalc.matchDamage(
+            elementAttackSum: elementAtk,
+            combo: wave.combo,
+            affinity: affinity,
           );
-          partyDmg += dmg;
-          partyHits.add(
+          final splitDmg = (dmg * zoneInfo.damageRatio).round();
+          if (splitDmg <= 0) continue;
+
+          monsterDmg += splitDmg;
+          slot.applyDamage(splitDmg);
+
+          monsterHits.add(
             DamageHit(
-              source: DamageSource.blackMatch,
+              source: DamageSource.match,
               element: run.element,
-              damage: dmg,
+              damage: splitDmg,
               waveNumber: wave.waveNumber,
               cells: run.cells,
-              heroId: target?.heroId,
+              combo: wave.combo,
+              weaknessHit: slot.monster.isWeakAgainst(run.element),
+              affinityMultiplier: affinity,
+              noElementHero: elementAtk == 0,
             ),
           );
-        } else {
-          // 데미지 밑은 **매칭한 색의 살아있는 영웅 ATK 합**이다. 시너지 배율표가
-          // 없어도 단색/다색 편성이 자연스럽게 반영된다 — 같은 색 영웅이 많을수록
-          // 합이 크고, 다른 색 룬을 맞히면 이 색의 공격력은 전혀 반영되지 않는다.
-          final elementAtk = state.attackForElement(run.element);
-
-          // 2페이즈 구조: 매치 위치에 따라 존별 데미지 분배
-          final zoneDistribution = _calculateZoneDistribution(run.cells);
-          for (final zoneInfo in zoneDistribution) {
-            final slot = _slotForZone(zoneInfo.zone);
-            if (slot == null || !slot.isAlive) continue;
-
-            final affinity = slot.monster.affinityFor(run.element);
-            final dmg = damageCalc.matchDamage(
-              elementAttackSum: elementAtk,
-              combo: wave.combo,
-              affinity: affinity,
-            );
-            final splitDmg = (dmg * zoneInfo.damageRatio).round();
-            if (splitDmg <= 0) continue;
-
-            monsterDmg += splitDmg;
-            slot.applyDamage(splitDmg);
-
-            monsterHits.add(
-              DamageHit(
-                source: DamageSource.match,
-                element: run.element,
-                damage: splitDmg,
-                waveNumber: wave.waveNumber,
-                cells: run.cells,
-                combo: wave.combo,
-                weaknessHit: slot.monster.isWeakAgainst(run.element),
-                affinityMultiplier: affinity,
-                noElementHero: elementAtk == 0,
-              ),
-            );
-            state.damageStats.record(
-              BattleDamageRecord(
-                source: BattleDamageSource.runeMatch,
-                element: run.element,
-                damage: splitDmg,
-              ),
-            );
-          }
+          state.damageStats.record(
+            BattleDamageRecord(
+              source: BattleDamageSource.runeMatch,
+              element: run.element,
+              damage: splitDmg,
+            ),
+          );
         }
       }
     }
@@ -506,12 +446,9 @@ class BattleEngine {
       }
     }
 
-    _applyPartyHits(partyHits);
     return _DamageRollup(
       monsterDamage: monsterDmg,
-      partyDamage: partyDmg,
       monsterHits: monsterHits,
-      partyHits: partyHits,
     );
   }
 
@@ -544,6 +481,15 @@ class BattleEngine {
     for (final slot in state.monsterSlots) {
       if (slot.zone == zone) return slot;
     }
+    // **페이즈2(보스 1마리)는 열과 무관하다** — 보드 어디에서 맞혀도 같은 상대
+    // 여야 하므로 전부 그 보스에게 보낸다.
+    //
+    // 페이즈1(좌/중/우 3마리)에서는 이 fallback이 **반드시 없어야 한다**. 있으면
+    // "왼쪽 열로 때렸으니 가운데 몬스터는 멀쩡"이라는 보드 규칙이 깨지고,
+    // 어느 열을 노려도 같은 몬스터가 맞는 것처럼 보여 세 마리의 상성을 못 쓴다.
+    if (state.stagePhase == StagePhase.phase2 && state.monsterSlots.length == 1) {
+      return state.monsterSlots.first;
+    }
     return null;
   }
 
@@ -567,62 +513,6 @@ class BattleEngine {
     state.monsterHp = bossSlot.hp;
     state.monsterMaxHp = bossSlot.maxHp;
     state.bossCountdown = state.stage.bossCountdown;
-  }
-
-  /// 확정된 파티 피해([DamageHit])를 **영웅별 HP** 에 적용한다.
-  ///
-  /// 한 턴에 Black 매칭이 여러 번 발생하면 매번 대상을 다시 고른다. 그래서
-  /// "4명이 전멸해야 패배"라는 드래곤퀘스트식 규칙이 실제로 성립한다.
-  /// 대상이 먼저 쓰러졌다면([heroId] 로 찾은 유닛이 죽음) 살아있는 영웅으로 대체.
-  ///
-  /// 실제 차감량([PartyHeroUnit.applyDamage] 반환값)을 [HeroDamageEvent] 로
-  /// 적재한다 — [DamageHit.damage] 는 **예측값**이고 대상 대체가 일어날 수
-  /// 있어 그대로 쓰면 "얼굴 밑 숫자 ≠ HP 바 델타" 가 된다.
-  void _applyPartyHits(List<DamageHit> hits) {
-    for (final hit in hits) {
-      if (hit.damage <= 0) continue;
-      // 대상이 파도 계산 중에 먼저 쓰러졌을 수 있다(같은 영웅이 두 번 뽑힘).
-      // 그때는 살아있는 영웅으로 넘긴다 — 이미 쓰러진 유닛에 또 깎으면
-      // "기록된 피해량과 hpBefore - hpAfter 가 어긋난다" 는 불일치가 생긴다.
-      final picked = _unitByHeroId(hit.heroId);
-      final unit = (picked != null && !picked.isDown)
-          ? picked
-          : _pickLivingUnit();
-      // 전멸 — 더 이상 맞힐 영웅이 없다.
-      if (unit == null) break;
-      final hpBefore = unit.hp;
-      final lost = unit.applyDamage(hit.damage);
-      if (lost > 0) {
-        _pendingHeroDamage.add(
-          HeroDamageEvent(
-            heroId: unit.heroId,
-            damage: lost,
-            source: HeroDamageSource.blackRune,
-            element: hit.element,
-            waveNumber: hit.waveNumber,
-          ),
-        );
-      }
-      state.damageStats.record(
-        BattleDamageRecord(
-          source: BattleDamageSource.blackRune,
-          element: hit.element,
-          damage: hit.damage,
-          hpBefore: hpBefore,
-          hpAfter: unit.hp,
-          hpMax: unit.maxHp,
-        ),
-      );
-    }
-  }
-
-  /// [heroId] 유닛을 찾는다. 편성에서 빠졌으면 null.
-  PartyHeroUnit? _unitByHeroId(String? heroId) {
-    if (heroId == null) return null;
-    for (final unit in state.units) {
-      if (unit.heroId == heroId) return unit;
-    }
-    return null;
   }
 
   /// 살아있는 영웅 중 1명을 **균등 랜덤**으로 고른다.
@@ -1226,22 +1116,14 @@ class BattleEngine {
 class _DamageRollup {
   _DamageRollup({
     required this.monsterDamage,
-    required this.partyDamage,
     required this.monsterHits,
-    required this.partyHits,
   });
 
   /// 유저가 준 피해(콤보 + 속성 시너지 반영).
   final int monsterDamage;
 
-  /// Black 룬으로 파티가 받은 피해.
-  final int partyDamage;
-
   /// [monsterDamage]의 1건 단위 내역.
   final List<DamageHit> monsterHits;
-
-  /// [partyDamage]의 1건 단위 내역.
-  final List<DamageHit> partyHits;
 }
 
 /// 매치의 존 분배 정보

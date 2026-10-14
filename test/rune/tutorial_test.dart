@@ -48,7 +48,7 @@ List<PuzzleMove> collectValidMoves(TutorialSection s) {
 void main() {
   group('튜토리얼 스크립트 구성', () {
     test('6개 섹션 + 고유 id + 스크립트 보드 파싱', () {
-      expect(TutorialScript.sections, hasLength(6));
+      expect(TutorialScript.sections, hasLength(7));
       final ids = TutorialScript.sections.map((s) => s.id).toList();
       expect(ids.toSet().length, ids.length);
 
@@ -74,6 +74,24 @@ void main() {
       // 몬스터 턴 후 state.combo는 0이므로 lastCascade로 판정
       expect(battle.lastCascade?.finalCombo, greaterThanOrEqualTo(2));
       expect(s.isDone(battle), isTrue);
+    });
+
+    test('열세 섹션: 같은 보드에서 배율만 ×0.5 로 내려간다', () {
+      final weak = TutorialScript.sections.firstWhere((s) => s.id == 'affinity');
+      final resist = TutorialScript.sections.firstWhere((s) => s.id == 'resist');
+
+      // 같은 Fire 매치를 두고 몬스터 상성만 바꾼다 — 배율 차이가 곧 규칙이다.
+      expect(resist.boardRows, weak.boardRows);
+      expect(resist.hintMove, weak.hintMove);
+      expect(weak.stage.affinityFor(RuneElement.fire), 1.5);
+      expect(resist.stage.affinityFor(RuneElement.fire), 0.5);
+
+      // 열세여도 불은 파티 기본 영웅이라 피해가 **0 이 아니다**(×0.5 만 적용).
+      final battle = tutorialEngine(resist);
+      applyMove(battle, resist.hintMove!.from, resist.hintMove!.to);
+      expect(battle.state.monsterHpTotal,
+          lessThan(battle.state.monsterHpTotalMax));
+      expect(resist.isDone(battle), isTrue);
     });
 
     test('몬스터 턴: 스왑 후 몬스터 공격으로 파티 피해 (RPT-112)', () {

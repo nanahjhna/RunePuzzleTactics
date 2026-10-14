@@ -184,7 +184,16 @@ class BattleState {
        monsterHp = stage.wave.isEmpty ? stage.monsterHp : stage.wave.first.hp,
        monsterMaxHp =
            stage.wave.isEmpty ? stage.monsterHp : stage.wave.first.hp,
-       bossCountdown = stage.bossCountdown {
+       bossCountdown = stage.bossCountdown,
+        // **레거시 단일 몬스터(파도 없음)는 곧 최종 상대**다 — [StageConfig.wave] 가
+        // 비면 "튜토리얼·보스" 1마리짜리 전투라, 이 슬롯 하나가 곧 보스다.
+        //
+        // 페이즈1로 두면 슬롯이 죽을 때마다 [_advanceToPhase2] 로 넘어가 버려
+        // "마지막 몬스터를 쓰러뜨리면 승리"가 영영 도달하지 않는다. 그래서 여기서
+        // 처음부터 페이즈2로 둔다 — 페이즈1(3마리 동시 상대)은 wave 전투 전용.
+        stagePhase = stage.wave.isEmpty
+            ? StagePhase.phase2
+            : StagePhase.phase1 {
 
     // 2페이즈 구조: 페이즈1에 몬스터 3마리 배치
     if (stage.wave.isNotEmpty && stage.wave.length >= 3) {
@@ -223,6 +232,18 @@ class BattleState {
 
   /// 몬스터 슬롯 목록 — 페이즈1: 3마리(좌/중/우), 페이즈2: 보스 1마리
   final List<MonsterSlot> monsterSlots = [];
+
+  /// **현재 몬스터 HP 합** (슬롯 기준 단일 권위).
+  ///
+  /// 매칭/스킬 피해는 [MonsterSlot.applyDamage] 로 들어가고 [monsterHp] 필드는
+  /// 슬롯과 **동기화되지 않는다**(마지막 몬스터 등장·페이즈 전환 시에만 갱신된다).
+  /// 그래서 "몬스터가 피격했는가"를 판정하려면 이 합을 읽어야 한다.
+  int get monsterHpTotal =>
+      monsterSlots.fold(0, (sum, slot) => sum + slot.hp);
+
+  /// [monsterHpTotal] 의 시작 값(최대치) 합.
+  int get monsterHpTotalMax =>
+      monsterSlots.fold(0, (sum, slot) => sum + slot.maxHp);
 
   /// 폴백용 합산 HP/ATK. 영웅별 스탯이 주입되지 않은 경로에서만 쓴다.
   final int _fallbackHp;

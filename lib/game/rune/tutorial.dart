@@ -1,6 +1,6 @@
 /// 튜토리얼 스크립트 정의 (RPT-418 ~ RPT-426)
-/// - 레인보우/블랙/셔플 등 제거된 요소는 제외하고, 기본 3매치 슬라이드 가이드에 집중합니다.
-/// - 인터랙티브 튜토리얼을 개편된 6개 섹션(단계)으로 구성합니다.
+/// - 레인보우/셔플 등 제거된 요소는 제외하고, 기본 3매치 슬라이드 가이드에 집중합니다.
+/// - 인터랙티브 튜토리얼을 개편된 7개 섹션(단계)으로 구성합니다.
 /// 각 섹션은 고유의 스크립트 보드([PuzzleBoard.fromRows])와 목표 판정([TutorialSection.isDone])을 가집니다.
 /// 순수 Dart(화면/애니메이션 없음)로 구현해 결정성 테스트가 가능합니다.
 /// 목표 판정은 배틀 상태(BattleState)만 바라본다 (RPT-126 단일 상태 원칙).
@@ -8,10 +8,11 @@
 /// 튜토리얼 흐름:
 ///   1. 기본 3매치 → 공격
 ///   2. 속성 시너지 (유일한 속성 배율 축)
-///   3. 콤보/캐스케이드
-///   4. 몬스터 턴
-///   5. 영웅 스킬 사용하기
-///   6. 보스 승리
+///   3. 열세 속성 (데미지 감소)
+///   4. 콤보/캐스케이드
+///   5. 몬스터 턴
+///   6. 영웅 스킬 사용하기
+///   7. 보스 승리
 library;
 
 import 'battle_engine.dart';
@@ -41,7 +42,7 @@ class TutorialSection {
   final String title;
   final String message;
 
-  /// 이 섹션 전용 스크립트 보드 (6×6, 문자 표기 F/G/W/L/P/B).
+  /// 이 섹션 전용 스크립트 보드 (6×6, 문자 표기 F/G/W/L/P).
   final List<String> boardRows;
 
   final StageConfig stage;
@@ -68,8 +69,7 @@ class TutorialSection {
 class TutorialScript {
   TutorialScript._();
 
-  /// 튜토리얼 섹션 목록. Black/레인보우/셔플 관련 섹션은 제외하고
-  /// 핵심 플레이 루프(3매치 → 콤보 → 몬스터 턴 → 영웅 스킬 → 보스 승리) 위주로 구성했습니다.
+  /// 튜토리얼 섹션 목록. 핵심 플레이 루프(3매치 → 콤보 → 몬스터 턴 → 영웅 스킬 → 보스 승리) 위주로 구성했습니다.
   static final List<TutorialSection> sections = [
     // 1. 기본 3매치 → 공격
     TutorialSection(
@@ -77,7 +77,7 @@ class TutorialScript {
       title: '같은 룬 3개를 맞춰보세요',
       message:
           '보드에서 불(Fire) 룬 3개가 모아 있어요.\n'
-          '룰을 옆/아래로 스와이프( 드래그 )하면 3개가 터지며 몬스터를 공격합니다!',
+          '룬을 옆/아래로 스와이프( 드래그 )하면 3개가 터지며 몬스터를 공격합니다!',
       boardRows: _fireBoard,
       stage: _stage(monsterHp: 9999),
       hintMove: const PuzzleMove(31, 32),
@@ -103,7 +103,34 @@ class TutorialScript {
       autoSwapMove: const PuzzleMove(31, 32),
       isDone: _attackDone,
     ),
-    // 3. 콤보/캐스케이드
+    // 3. 열세 속성 (데미지 감소)
+    //
+    // 2번과 **같은 보드**를 쓴다 — 달라지는 건 몬스터의 상성뿐이다. 같은 3매치가
+    // ×1.5(2번)와 ×0.5(3번)를 만들어 내므로 "숫자가 왜 바뀌는지"를 보드에서 바로
+    // 비교할 수 있다.
+    //
+    // 열세 속성도 Fire 로 잡는 이유: 매칭 데미지의 밑은 **그 색 영웅의 공격력 합**
+    // 이므로, 파티에 없는 색을 골라도 데미지가 0 이 되어 "약점보다 약한가?"와
+    // "그 색 영웅이 없나?"가 구분되지 않는다. 파티는 불 영웅을 기본 지급하므로
+    // Fire 매칭은 항상 피해가 나오고, 배율만 달라진다.
+    TutorialSection(
+      id: 'resist',
+      title: '주의! 몬스터가 강한 속성도 있습니다',
+      message:
+          '이번 몬스터는 불(Fire)에 강합니다.\n'
+          '같은 Fire 3개라도 배율이 ×1.5 가 아니라 ×0.5 로 떨어집니다. '
+          '몬스터의 약점을 먼저 확인하세요!',
+      boardRows: _fireBoard,
+      stage: _stage(
+        monsterHp: 9999,
+        weakElement: RuneElement.grass,
+        resistElement: RuneElement.fire,
+      ),
+      hintMove: const PuzzleMove(31, 32),
+      autoSwapMove: const PuzzleMove(31, 32),
+      isDone: _attackDone,
+    ),
+    // 4. 콤보/캐스케이드
     TutorialSection(
       id: 'combo',
       title: '연쇄가 일어나면 콤보!',
@@ -116,7 +143,7 @@ class TutorialScript {
       autoSwapMove: const PuzzleMove(16, 17),
       isDone: _comboDone,
     ),
-    // 4. 몬스터 턴
+    // 5. 몬스터 턴
     TutorialSection(
       id: 'monster',
       title: '턴이 끝나면 몬스터가 공격',
@@ -129,7 +156,7 @@ class TutorialScript {
       autoSwapMove: const PuzzleMove(31, 32),
       isDone: _partyDamaged,
     ),
-    // 5. 영웅 스킬 사용하기
+    // 6. 영웅 스킬 사용하기
     TutorialSection(
       id: 'skill',
       title: '영웅 스킬 사용하기',
@@ -142,7 +169,7 @@ class TutorialScript {
       autoSwapMove: null,
       isDone: _heroSkillUsed,
     ),
-    // 6. 보스 승리
+    // 7. 보스 승리
     TutorialSection(
       id: 'boss',
       title: '마지막! 보스를 쓰러뜨리세요',
@@ -185,8 +212,12 @@ class TutorialScript {
   // ── 목표 판정 ──
 
   /// 일반 공격이 들어갔는가 (몬스터 HP 감소).
+  ///
+  /// 피해는 [MonsterSlot] 에 쌓이고 `state.monsterHp` 필드와 동기화되지 않으므로
+  /// **슬롯 HP 합**으로 판정한다. 필드를 보면 언제나 "최대치 그대로"라
+  /// 섹션이 영영 끝나지 않는다.
   static bool _attackDone(BattleEngine battle) =>
-      battle.state.monsterHp < battle.state.monsterMaxHp;
+      battle.state.monsterHpTotal < battle.state.monsterHpTotalMax;
 
   /// 콤보 ≥ 2 (캐스케이드 연쇄 발생).
   /// 마지막 해석의 연쇄 파도 수 기준.
@@ -208,7 +239,7 @@ class TutorialScript {
 
   /// 섹션용 스테이지 설정 (몬스터 능력치 튜닝).
   ///
-  /// 약점/열세 속성은 Fire / Grass 로 고정한다 — [_fireBoard] 로 teaches 하는
+  /// 약점/열세 속성은 Fire / Grass 로 고정한다 — [_fireBoard] 와 [_grassBoard] 로 teaches 하는
   /// 단계에서 설명과 실제 배율이 어긋나지 않게 하기 위해서다.
   /// (1스테이지 생성 규칙과도 일치한다: 약점 불 → 열세 풀.)
   static StageConfig _stage({
@@ -225,9 +256,6 @@ class TutorialScript {
       weakElement: weakElement,
       resistElement: resistElement,
       bossCountdown: 0,
-      blackSpawnRate: 0, // 리필 시 Black 비생성 (스크립트 보드 유지)
-      maxBlackOnBoard: 6,
-      blackDamage: 10,
       goldReward: 0,
     );
   }

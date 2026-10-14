@@ -48,8 +48,7 @@ enum HeroSkillEffect {
   healPerRune,
 
   /// **Light** — 지정한 칸의 **3×3 영역**(중심 + 주변 8칸)을 제거하고
-  /// 낙하/리필/연쇄 매칭을 잇는다. 대상은 **빈칸을 제외한 모든 칸**
-  /// (Black 룬 포함 — 이게 보드상 Black 을 없앨 유일한 수단이다).
+  /// 낙하/리필/연쇄 매칭을 잇는다. 대상은 **빈칸을 제외한 모든 칸**.
   blastArea,
 
   /// **Poison** — 보드 내 [HeroSkillSpec.countElement] 룬 개수만큼 몬스터에

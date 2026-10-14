@@ -65,9 +65,6 @@ class StageConfig {
     required this.weakElement,
     required this.resistElement,
     required this.bossCountdown,
-    required this.blackSpawnRate,
-    required this.maxBlackOnBoard,
-    required this.blackDamage,
     required this.goldReward,
     this.bossUltimateDamage = 100,
     this.monsterName = 'Slime',
@@ -122,9 +119,6 @@ class StageConfig {
   /// 막는다. 전멸했을 때만 패배한다.
   final int bossUltimateDamage;
 
-  final double blackSpawnRate;
-  final int maxBlackOnBoard;
-  final int blackDamage;
   final int goldReward;
 
   /// 몬스터 표시 이름 (사양 결정 6: 전용 애니메이션 에셋 없이 텍스트로 다변화).
@@ -167,14 +161,12 @@ class StageGenerator {
     this.baseAttack = 12,
     this.baseGold = 100,
     this.bossHpMultiplier = 2.0,
-    double? blackSpawnRate,
-  }) : blackSpawnRate = blackSpawnRate ?? 0.05;
+  });
 
   final int baseHp;
   final int baseAttack;
   final int baseGold;
   final double bossHpMultiplier;
-  final double blackSpawnRate;
 
   /// Stage Rule: %10 == 0 → Boss, %5 == 0 → Elite, 그 외 Normal (RPT-174).
   static StageType typeFor(int stageNumber) {
@@ -319,10 +311,6 @@ class StageGenerator {
       bossUltimateDamage: type == StageType.boss
           ? (monsterHp * 0.25).round()
           : 0,
-      blackSpawnRate: blackSpawnRate,
-      // RPT-57/58/198: Black은 기본 6, Boss는 7까지 허용 (Black 5 발동 가능성 유지)
-      maxBlackOnBoard: type == StageType.boss ? 7 : 6,
-      blackDamage: 10, // Playtest 기준값 (RPT-61)
       goldReward: gold,
       monsterName: monsterNameFor(stageNumber),
       subtitle: monsterSubtitleFor(stageNumber),
